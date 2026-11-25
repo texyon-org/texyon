@@ -129,7 +129,12 @@ impl TestCase {
             for io in &mut self.extra_io {
                 io_list.push(&mut **io);
             }
-            let io = IoStack::new(io_list);
+            let io = IoStack::new(
+                io_list
+                    .into_iter()
+                    .map(|p| Box::new(p) as Box<dyn IoProvider + '_>)
+                    .collect(),
+            );
             let mut hooks = MinimalDriver::new(io);
             let mut status = NoopStatusBackend::default();
             let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);

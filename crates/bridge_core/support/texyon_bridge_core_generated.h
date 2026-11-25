@@ -124,14 +124,6 @@ typedef enum {
  */
 typedef struct ttbc_state_t ttbc_state_t;
 
-/**
- * A buffer for diagnostic messages. Rust code does not need to use this type.
- *
- * This type has to be public so that it can be exposed in the C/C++ headers,
- * but it doesn't provide any useful functionality on the Rust side.
- */
-typedef struct ttbc_diagnostic_t ttbc_diagnostic_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -146,36 +138,6 @@ extern const char *_ttbc_get_error_message(void);
  * This function is unsafe because it accepts a raw C string.
  */
 void ttbc_issue_warning(ttbc_state_t *es, const char *text);
-
-/**
- * Issue an error.
- *
- * # Safety
- *
- * This function is unsafe because it accepts a raw C string.
- */
-void ttbc_issue_error(ttbc_state_t *es, const char *text);
-
-/**
- * Calculate the MD5 digest of a Tectonic file.
- *
- * # Safety
- *
- * This function is unsafe because it dereferences raw pointers from C.
- */
-int ttbc_get_file_md5(ttbc_state_t *es, const char *path, uint8_t *digest);
-
-/**
- * Calculate the MD5 digest of a block of binary data.
- *
- * This actually doesn't rely on the state and isn't really I/O, but we also
- * have a get-file-MD5 routine so it's convenient to have this here.
- *
- * # Safety
- *
- * This function is unsafe because it dereferences raw pointers from C.
- */
-int ttbc_get_data_md5(const uint8_t *data, size_t len, uint8_t *digest);
 
 /**
  * Open a Tectonic file for output.
@@ -206,11 +168,6 @@ int ttbc_output_putc(ttbc_state_t *es, Option_OutputId handle, int c);
 size_t ttbc_output_write(ttbc_state_t *es, Option_OutputId handle, const uint8_t *data, size_t len);
 
 /**
- * Flush pending writes to a Tectonic output file.
- */
-int ttbc_output_flush(ttbc_state_t *es, Option_OutputId handle);
-
-/**
  * Close a Tectonic output file.
  */
 int ttbc_output_close(ttbc_state_t *es, Option_OutputId handle);
@@ -226,31 +183,6 @@ Option_InputId ttbc_input_open(ttbc_state_t *es,
                                const char *name,
                                ttbc_file_format format,
                                int is_gz);
-
-/**
- * Open the "primary input" file.
- */
-Option_InputId ttbc_input_open_primary(ttbc_state_t *es);
-
-/**
- * Get the filesystem path of the most-recently-opened input file.
- *
- * This function is needed by SyncTeX, because its output file should contain
- * absolute filesystem paths to the input source files. In principle this
- * functionality could be implemented in a few different ways, but the approach
- * used here is the most backward-compatible. This function will fill in the
- * caller's buffer with the filesystem path associated with the most
- * recently-opened input file, including a terminating NUL, if possible.
- *
- * It returns 0 if no such path is known, -1 if the path cannot be expressed
- * UTF-8, -2 if the destination buffer is not big enough, or the number of
- * bytes written into the buffer (including a terminating NUL) otherwise.
- *
- * # Safety
- *
- * This function is unsafe because it dereferences raw C pointers.
- */
-ssize_t ttbc_get_last_input_abspath(ttbc_state_t *es, uint8_t *buffer, size_t len);
 
 /**
  * Get the size of a Tectonic input file.
@@ -313,43 +245,6 @@ ssize_t ttbc_input_read_partial(ttbc_state_t *es, Option_InputId handle, uint8_t
  * Close a Tectonic input file.
  */
 int ttbc_input_close(ttbc_state_t *es, Option_InputId handle);
-
-/**
- * Create a new diagnostic that will be reported as a warning.
- */
-ttbc_diagnostic_t *ttbc_diag_begin_warning(void);
-
-/**
- * Create a new diagnostic that will be reported as an error.
- */
-ttbc_diagnostic_t *ttbc_diag_begin_error(void);
-
-/**
- * Append text to a diagnostic.
- *
- * # Safety
- *
- * This function is unsafe because it accepts a raw C string.
- */
-void ttbc_diag_append(ttbc_diagnostic_t *diag, const char *text);
-
-/**
- * "Finish" a diagnostic: report it to the driver and free the diagnostic object.
- *
- * # Safety
- *
- * This function is unsafe because it dereferences a raw Diagnostic pointer
- */
-void ttbc_diag_finish(ttbc_state_t *es, ttbc_diagnostic_t *diag);
-
-/**
- * Run a shell command
- *
- * # Safety
- *
- * This function is unsafe because it dereferences raw pointers from C and accepts a raw C string.
- */
-int ttbc_shell_escape(ttbc_state_t *es, const uint16_t *cmd, size_t len);
 
 #ifdef __cplusplus
 }  // extern "C"

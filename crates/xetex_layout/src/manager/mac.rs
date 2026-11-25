@@ -51,7 +51,7 @@ impl MacBackend {
         &self,
         maps: &mut FontMaps,
         members: CFArray<CTFontDescriptor>,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         for i in 0..members.len() {
             let font = members.get(i);
@@ -64,7 +64,7 @@ impl MacBackend {
         &self,
         maps: &mut FontMaps,
         font: &CTFontDescriptor,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         let font = CTFont::new_descriptor(font, 10.0);
         let attr = font.attr(FontAttribute::FamilyName).unwrap();
@@ -78,7 +78,7 @@ impl MacBackend {
         &self,
         maps: &mut FontMaps,
         family: CTFontDescriptor,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         let name_str = family
             .attr(FontAttribute::FamilyName)
@@ -110,7 +110,11 @@ impl FontManagerBackend for MacBackend {
         path
     }
 
-    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo, io: &mut CoreBridgeState<'_>) {
+    fn get_op_size_rec_and_style_flags(
+        &self,
+        font: &mut FontInfo,
+        io: &mut CoreBridgeState<'_, '_>,
+    ) {
         base_get_op_size_rec_and_style_flags(font, io);
     }
 
@@ -118,7 +122,7 @@ impl FontManagerBackend for MacBackend {
         &mut self,
         maps: &mut FontMaps,
         name: &CStr,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         let name_str = CFString::new(name);
         let matched = find_font_with_name(name_str.clone(), FontAttribute::DisplayName);

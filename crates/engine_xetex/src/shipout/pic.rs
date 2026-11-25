@@ -4,17 +4,19 @@ use std::f64::consts::PI;
 
 use libc::{c_char, c_double, c_int, c_uint};
 
+use texyon_bridge_core::InputId;
+
 use crate::base::codes::code_enum;
-use crate::base::consts::INVALID_HANDLE;
 use crate::base::units::Scaled;
-use crate::ffi::bridge::{FileFormat, input_open, with_c_io};
+use crate::env::EngineEnv;
 use crate::ffi::teckit_icu::with_c_str;
-use crate::files::io::{input_close, last_found_name, scan_file_name};
+use crate::files::io::scan_file_name;
 use crate::fonts::ext::{d2fix, fix2d};
 use crate::memory::node::{PicNode, WhatsitSubtype};
 use crate::print::errors::{Abort, error};
 use crate::scanning::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
 use crate::state::EngineState;
+use texyon_bridge_core::{CoreBridgeState, FileFormat};
 
 #[repr(C)]
 #[derive(Default)]
@@ -120,6 +122,7 @@ impl PageboxType {
 }
 
 fn pdf_get_rect(
+    es: &mut CoreBridgeState<'_, '_>,
     filename: &[u8],
     handle: usize,
     page_num: c_int,
@@ -128,20 +131,19 @@ fn pdf_get_rect(
     let mut bbox = PdfRect::default();
     let mut rotate: c_int = 0;
     let status = with_c_str(filename, |filename| {
-        with_c_io(|| {
-            // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
-            // the box and rotation are valid out-parameters.
-            unsafe {
-                tt_pic_probe_pdf_box(
-                    filename,
-                    handle,
-                    page_num,
-                    pdf_box.dpx_option(),
-                    &mut bbox,
-                    &mut rotate,
-                )
-            }
-        })
+        let _c = es.enter_global_engine();
+        // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
+        // the box and rotation are valid out-parameters.
+        unsafe {
+            tt_pic_probe_pdf_box(
+                filename,
+                handle,
+                page_num,
+                pdf_box.dpx_option(),
+                &mut bbox,
+                &mut rotate,
+            )
+        }
     });
     if status != PIC_PROBE_OK {
         return None;
@@ -160,10 +162,14 @@ fn pdf_get_rect(
     })
 }
 
-fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
+fn get_image_size_in_inches(
+    es: &mut CoreBridgeState<'_, '_>,
+    handle: usize,
+) -> Result<(f64, f64), c_int> {
     let (mut width_pix, mut height_pix) = (0, 0);
     let (mut xdensity, mut ydensity) = (0.0, 0.0);
-    let err = with_c_io(|| {
+    let err = {
+        let _c = es.enter_global_engine();
         // SAFETY: `handle` is an open input and the sizes are valid out-parameters.
         unsafe {
             tt_pic_probe_image_box(
@@ -174,7 +180,7 @@ fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
                 &mut ydensity,
             )
         }
-    });
+    };
     if err != PIC_PROBE_OK {
         return Err(err);
     }
@@ -184,39 +190,44 @@ fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     ))
 }
 
+/// Opens picture `path` in a bridge state of its own, since the C probes read it by id.
 fn find_pic_file(
+    env: &mut EngineEnv,
     path: &[u8],
     pdf_box: Option<PageboxType>,
     page: c_int,
 ) -> Result<(c_int, RealRect, Vec<u8>), Abort> {
-    let handle = input_open(path, FileFormat::Pict, false);
-    if handle == INVALID_HANDLE {
-        return Ok((1, RealRect::default(), path.to_vec()));
-    }
-    let found = last_found_name(path);
+    env.bridge_state(|es| {
+        let Some(id) = es.input_open(&String::from_utf8_lossy(path), FileFormat::Pict, false)
+        else {
+            return Ok((1, RealRect::default(), path.to_vec()));
+        };
+        let found = es.latest_input_found().name(path);
+        let handle = InputId::to_raw(Some(id));
 
-    let (err, bounds) = match pdf_box {
-        Some(pdf_box) => match pdf_get_rect(path, handle, page, pdf_box) {
-            Some(bounds) => (0, bounds),
-            None => (-1, RealRect::default()),
-        },
-        None => {
-            let (err, (wd, ht)) = match get_image_size_in_inches(handle) {
-                Ok(size) => (0, size),
-                Err(e) => (e, (-1.0, -1.0)),
-            };
-            let bounds = RealRect {
-                wd: (wd * 72.27) as f32,
-                ht: (ht * 72.27) as f32,
-                ..RealRect::default()
-            };
-            (err, bounds)
+        let (err, bounds) = match pdf_box {
+            Some(pdf_box) => match pdf_get_rect(es, path, handle, page, pdf_box) {
+                Some(bounds) => (0, bounds),
+                None => (-1, RealRect::default()),
+            },
+            None => {
+                let (err, (wd, ht)) = match get_image_size_in_inches(es, handle) {
+                    Ok(size) => (0, size),
+                    Err(e) => (e, (-1.0, -1.0)),
+                };
+                let bounds = RealRect {
+                    wd: (wd * 72.27) as f32,
+                    ht: (ht * 72.27) as f32,
+                    ..RealRect::default()
+                };
+                (err, bounds)
+            }
+        };
+        if es.input_close(id) {
+            return Err(Abort::InputClose);
         }
-    };
-    if input_close(handle) {
-        return Err(Abort::InputClose);
-    }
-    Ok((err, bounds, found))
+        Ok((err, bounds, found))
+    })
 }
 
 impl Transform {
@@ -307,13 +318,14 @@ impl Placement {
     }
 }
 
-fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
-    let d = scan_dimen(st, false)?;
+fn scan_image_size(st: &mut EngineState, env: &mut EngineEnv) -> Result<Option<f64>, Abort> {
+    let d = scan_dimen(st, env, false)?;
     if d > Scaled::ZERO {
         return Ok(Some(fix2d(d)));
     }
     error(
         st,
+        env,
         ("Improper image ", "size (", d, "pt) will be ignored"),
         &[
             "I can't scale images to zero or negative sizes,",
@@ -323,18 +335,22 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     Ok(None)
 }
 
-fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
-    Ok(f64::from(scan_int(st)?) / 1000.0)
+fn scan_scale_factor(st: &mut EngineState, env: &mut EngineEnv) -> Result<f64, Abort> {
+    Ok(f64::from(scan_int(st, env)?) / 1000.0)
 }
 
-pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
-    let file = scan_file_name(st)?.file;
+pub(crate) fn load_picture(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    is_pdf: bool,
+) -> Result<(), Abort> {
+    let file = scan_file_name(st, env)?.file;
 
     let mut pdf_box_type = None;
     let mut page = 0;
     if is_pdf {
-        if scan_keyword(st, "page")? {
-            page = scan_int(st)?;
+        if scan_keyword(st, env, "page")? {
+            page = scan_int(st, env)?;
         }
         let keywords = [
             ("crop", PageboxType::Crop),
@@ -345,7 +361,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         ];
         let mut pdf_box = PageboxType::Unset;
         for (keyword, pb) in keywords {
-            if scan_keyword(st, keyword)? {
+            if scan_keyword(st, env, keyword)? {
                 pdf_box = pb;
                 break;
             }
@@ -353,7 +369,8 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         pdf_box_type = Some(pdf_box);
     }
 
-    let (result, bounds, pic_path) = find_pic_file(&file.path(&st.strings), pdf_box_type, page)?;
+    let (result, bounds, pic_path) =
+        find_pic_file(env, &file.path(&st.strings), pdf_box_type, page)?;
 
     let (x, y, wd, ht) = (bounds.x, bounds.y, bounds.wd, bounds.ht);
     let mut placement = Placement {
@@ -372,31 +389,31 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     let mut y_size_req = 0.0;
     loop {
         let no_size_req = x_size_req == 0.0 && y_size_req == 0.0;
-        if scan_keyword(st, "scaled")? {
-            let s = scan_scale_factor(st)?;
+        if scan_keyword(st, env, "scaled")? {
+            let s = scan_scale_factor(st, env)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, s));
             }
-        } else if scan_keyword(st, "xscaled")? {
-            let s = scan_scale_factor(st)?;
+        } else if scan_keyword(st, env, "xscaled")? {
+            let s = scan_scale_factor(st, env)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, 1.0));
             }
-        } else if scan_keyword(st, "yscaled")? {
-            let s = scan_scale_factor(st)?;
+        } else if scan_keyword(st, env, "yscaled")? {
+            let s = scan_scale_factor(st, env)?;
             if no_size_req {
                 placement.transform(&Transform::scale(1.0, s));
             }
-        } else if scan_keyword(st, "width")? {
-            if let Some(size) = scan_image_size(st)? {
+        } else if scan_keyword(st, env, "width")? {
+            if let Some(size) = scan_image_size(st, env)? {
                 x_size_req = size;
             }
-        } else if scan_keyword(st, "height")? {
-            if let Some(size) = scan_image_size(st)? {
+        } else if scan_keyword(st, env, "height")? {
+            if let Some(size) = scan_image_size(st, env)? {
                 y_size_req = size;
             }
-        } else if scan_keyword(st, "rotated")? {
-            let angle = scan_decimal(st)?;
+        } else if scan_keyword(st, env, "rotated")? {
+            let angle = scan_decimal(st, env)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);
                 x_size_req = 0.0;
@@ -460,6 +477,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         };
         error(
             st,
+            env,
             ("Unable to load picture or PDF file '", file, b'\''),
             &["The requested image couldn't be read because", reason],
         )?;
@@ -467,22 +485,26 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     Ok(())
 }
 
-pub(crate) fn count_pdf_file_pages_named(name: &[u8]) -> Result<c_int, Abort> {
-    let handle = input_open(name, FileFormat::Pict, false);
-    if handle == INVALID_HANDLE {
-        return Ok(0);
-    }
-    let mut pages = 0;
-    let status = with_c_str(name, |name| {
-        // SAFETY: `name` is NUL-terminated, `handle` is an open input and
-        // `pages` is a valid out-parameter.
-        with_c_io(|| unsafe { tt_pic_probe_pdf_page_count(name, handle, &mut pages) })
-    });
-    if status != PIC_PROBE_OK {
-        pages = 0;
-    }
-    if input_close(handle) {
-        return Err(Abort::InputClose);
-    }
-    Ok(pages)
+pub(crate) fn count_pdf_file_pages_named(env: &mut EngineEnv, name: &[u8]) -> Result<c_int, Abort> {
+    env.bridge_state(|es| {
+        let Some(id) = es.input_open(&String::from_utf8_lossy(name), FileFormat::Pict, false)
+        else {
+            return Ok(0);
+        };
+        let handle = InputId::to_raw(Some(id));
+        let mut pages = 0;
+        let status = with_c_str(name, |name| {
+            let _c = es.enter_global_engine();
+            // SAFETY: `name` is NUL-terminated, `handle` is an open input and
+            // `pages` is a valid out-parameter.
+            unsafe { tt_pic_probe_pdf_page_count(name, handle, &mut pages) }
+        });
+        if status != PIC_PROBE_OK {
+            pages = 0;
+        }
+        if es.input_close(id) {
+            return Err(Abort::InputClose);
+        }
+        Ok(pages)
+    })
 }

@@ -8,6 +8,7 @@ use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::scaled_math::{badness, fract};
 use crate::base::units::{FontId, GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::packaging::PackOrigin;
+use crate::env::EngineEnv;
 use crate::fonts::FontState;
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::{MemState, TEMP_HEAD};
@@ -191,12 +192,14 @@ impl Breaker {
     fn finite_shrink(
         &mut self,
         st: &mut EngineState,
+        env: &mut EngineEnv,
         spec: GlueSpecId,
     ) -> Result<GlueSpecId, Abort> {
         if self.no_shrink_error_yet {
             self.no_shrink_error_yet = false;
             error(
                 st,
+                env,
                 "Infinite glue shrinkage found in a paragraph",
                 &[
                     "The paragraph just ended includes some glue that has",
@@ -248,7 +251,11 @@ impl MemState {
     }
 }
 
-pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNode>, Abort> {
+pub(crate) fn line_break(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    d: bool,
+) -> Result<NodePtr<BoxNode>, Abort> {
     let origin = PackOrigin::from_begin_line(st.input.cur_list.mode_line);
     let first = st.input.cur_list.head.link(&st.mem);
     TEMP_HEAD.set_link(&mut st.mem, first);
@@ -293,7 +300,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     for n in [GluePar::LeftSkip, GluePar::RightSkip] {
         let spec = st.eqtb.glue_par(n);
         if st.mem.has_infinite_shrink(spec) {
-            let spec = lb.finite_shrink(st, spec)?;
+            let spec = lb.finite_shrink(st, env, spec)?;
             st.eqtb.set_glue_par(n, spec);
         }
     }
@@ -431,7 +438,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
                     let mut spec = st.mem[cur_glue].glue_ptr;
                     if st.mem.has_infinite_shrink(spec) {
-                        spec = lb.finite_shrink(st, spec)?;
+                        spec = lb.finite_shrink(st, env, spec)?;
                         st.mem[cur_glue].glue_ptr = spec;
                     }
                     let aw = &mut lb.active_width;
@@ -440,7 +447,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     aw[6] += st.mem[spec].shrink;
 
                     if second_pass && auto_breaking {
-                        try_hyphenate(st, cur)?;
+                        try_hyphenate(st, env, cur)?;
                     }
                 }
                 AnyNode::Kern(k) => {
@@ -536,7 +543,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
     lb.finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
 
-    let last_line = post_line_break(st, &mut lb, &best, d, origin)?;
+    let last_line = post_line_break(st, env, &mut lb, &best, d, origin)?;
     Ok(last_line)
 }
 

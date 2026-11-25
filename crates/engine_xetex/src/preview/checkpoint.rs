@@ -42,6 +42,16 @@ pub(crate) struct CheckpointLadder<B> {
     verify_rewinds: bool,
 }
 
+/// An empty ladder, the placeholder while an operation's fences hold the real one.
+impl<B> Default for CheckpointLadder<B> {
+    fn default() -> Self {
+        CheckpointLadder {
+            rungs: Vec::new(),
+            verify_rewinds: false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct RestoreMismatch {
     rung: usize,
@@ -565,6 +575,7 @@ mod tests {
     use crate::base::command::{Command, Usv};
     use crate::base::token::{Token, TokenStoreMarks};
     use crate::base::units::{MemIdx, MemPtr, PoolPos};
+    use crate::env::{EngineEnv, test_env};
     use crate::memory::mem_types::zeroed_vec;
     use crate::tables::cs::CsId;
     use crate::tables::eqtb::{IntLoc, Register, Table};
@@ -925,29 +936,30 @@ mod tests {
 
     #[test]
     fn prefix_detour_and_rewind_reproduce_state_and_output() {
-        fn run_prefix(st: &mut EngineState, value: i32) {
+        fn run_prefix(st: &mut EngineState, env: &mut EngineEnv, value: i32) {
             st.mem.set_word(1, value);
             st.shipout.dvi.init();
             for b in value.to_le_bytes() {
-                st.shipout.dvi.set_char(u16::from(b)).unwrap();
+                st.shipout.dvi.set_char(env, u16::from(b)).unwrap();
             }
             st.scanner.logical_clock += 1;
         }
 
+        let env = &mut test_env();
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
         st.strings.str_start = vec![PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
-        run_prefix(&mut st, 17);
+        run_prefix(&mut st, env, 17);
         let expected_output = st.shipout.dvi.digest_view().1.to_vec();
         let expected_state = oracle::digest_state(&st);
 
         ladder.rewind_engine(&mut st, 0);
-        run_prefix(&mut st, 23);
+        run_prefix(&mut st, env, 23);
         ladder.push_engine(&mut st, strings_base, false, false);
         ladder.rewind_engine(&mut st, 0);
-        run_prefix(&mut st, 17);
+        run_prefix(&mut st, env, 17);
 
         assert_eq!(st.shipout.dvi.digest_view().1, expected_output);
         assert_eq!(oracle::digest_state(&st), expected_state);

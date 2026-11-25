@@ -4,6 +4,7 @@ use crate::base::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, GlueOrder, GlueSign, Scaled};
 use crate::build::packaging::{PackSpec, hpack};
+use crate::env::EngineEnv;
 use crate::fonts::ot_math::GlyphAssembly;
 use crate::fonts::tfm::ExtIdx;
 use crate::fonts::{
@@ -42,10 +43,15 @@ impl MemState {
     }
 }
 
-fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<NodePtr<BoxNode>, Abort> {
+fn char_box(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    f: FontId,
+    c: i32,
+) -> Result<NodePtr<BoxNode>, Abort> {
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let p = new_native_character(st, f, c as u32)?;
+        let p = new_native_character(st, env, f, c as u32)?;
         Ok(st.mem.native_char_box(p)?)
     } else {
         Ok(st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?)
@@ -151,12 +157,13 @@ fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<NodePtr<
 
 pub(super) fn rebox(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     b: NodePtr<BoxNode>,
     w: Scaled,
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut b = b;
     if st.mem[b].width != w && !st.mem[b].list_ptr.is_none() && st.mem[b].is_vlist() {
-        b = hpack(st, b.ptr(), PackSpec::NATURAL)?;
+        b = hpack(st, env, b.ptr(), PackSpec::NATURAL)?;
     }
     if st.mem[b].width == w || st.mem[b].list_ptr.is_none() {
         st.mem[b].width = w;
@@ -185,7 +192,7 @@ pub(super) fn rebox(
     let last = mem.list_tail(first);
     let tail_glue = mem.new_glue(SS_GLUE)?;
     last.set_link(mem, tail_glue.ptr());
-    hpack(st, g.ptr(), PackSpec::Exactly(w))
+    hpack(st, env, g.ptr(), PackSpec::Exactly(w))
 }
 
 pub(super) fn build_opentype_assembly(
@@ -338,6 +345,7 @@ impl MemState {
 
 pub(super) fn var_delimiter(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     d: DelimiterWord,
     s: i32,
     v: Scaled,
@@ -437,7 +445,7 @@ pub(super) fn var_delimiter(
         if let CharTag::Ext(e) = q.tag {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, e, v)?
         } else {
-            char_box(st, f, i32::from(c))?
+            char_box(st, env, f, i32::from(c))?
         }
     } else if let Some(assembly) = &ot_assembly {
         build_opentype_assembly(st, f, assembly, v, false)?

@@ -3,6 +3,7 @@
 use super::hyphenate::{hyphenate, split_native_word};
 use crate::base::params::IntPar;
 use crate::base::units::{MemIdx, MemPtr};
+use crate::env::EngineEnv;
 use crate::fonts::LigChar;
 use crate::memory::mem::MemState;
 use crate::memory::node::{
@@ -64,7 +65,11 @@ impl MemState {
     }
 }
 
-pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemIdx) -> Result<(), Abort> {
+pub(super) fn try_hyphenate(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    cur: MemIdx,
+) -> Result<(), Abort> {
     let max_len = st.eqtb.max_hyphenatable_length();
     let uc_hyph = st.eqtb.int_par(IntPar::UcHyph) > 0;
     let mut prev_s = cur;
@@ -182,7 +187,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemIdx) -> Result<(), Abo
         return Ok(());
     }
 
-    hyphenate(st, &word, native_ha)
+    hyphenate(st, env, &word, native_ha)
 }
 
 fn collect_native_word(

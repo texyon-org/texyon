@@ -421,7 +421,7 @@ impl SaveBundle {
 }
 
 /// Open input and read slots are operation resources that resume replay
-/// rebuilds, so a rung never owns a live UFile.
+/// rebuilds, so a rung never owns a live input file.
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: StackBundle<InputState>,
@@ -867,6 +867,7 @@ mod tests {
     use super::*;
     use crate::base::units::Scaled;
     use crate::build::main_control::BoxContext;
+    use crate::env::test_env;
     use crate::fonts::{PerFont, Side};
     use crate::memory::glyph_arena::{FixedPoint, GlyphBlob};
     use crate::memory::mem::RESERVED_WORDS;
@@ -890,6 +891,7 @@ mod tests {
 
     #[test]
     fn bundle_restores_non_journaled_state_without_moving_live_buffers() {
+        let env = &mut test_env();
         let mut st = state();
         let base = StringWatermark::capture(&st);
         st.scanner.logical_clock = 7;
@@ -897,7 +899,7 @@ mod tests {
         st.shipout.total_pages = 2;
         st.shipout.dvi.init();
         for c in [4, 5, 6] {
-            st.shipout.dvi.set_char(c).unwrap();
+            st.shipout.dvi.set_char(env, c).unwrap();
         }
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = PoolPos::from_raw(1);
@@ -919,7 +921,7 @@ mod tests {
         st.scanner.logical_clock = 70;
         st.scanner.native_text[0] = 70;
         st.shipout.total_pages = 20;
-        st.shipout.dvi.set_char(40).unwrap();
+        st.shipout.dvi.set_char(env, 40).unwrap();
         st.shipout.dvi.manifest.begin_operation();
         st.shipout.dvi.manifest.begin_page(0);
         st.shipout.dvi.manifest.record_byte(139);

@@ -76,7 +76,12 @@ fn run_clock_fixture(tz: &str, epoch: u64, deterministic: bool) -> Vec<String> {
     {
         let providers: Vec<&mut dyn IoProvider> =
             vec![&mut output, &mut primary, &mut format, &mut support];
-        let mut hooks = MinimalDriver::new(IoStack::new(providers));
+        let mut hooks = MinimalDriver::new(IoStack::new(
+            providers
+                .into_iter()
+                .map(|p| Box::new(p) as Box<dyn IoProvider + '_>)
+                .collect(),
+        ));
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
 

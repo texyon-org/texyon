@@ -69,7 +69,7 @@ impl BibData {
 }
 
 pub(crate) fn eat_bib_white_space(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     bibs: &mut BibData,
 ) -> bool {
@@ -90,7 +90,7 @@ pub(crate) fn eat_bib_white_space(
 }
 
 pub(crate) fn compress_bib_white(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &StringPool,
     bibs: &mut BibData,
@@ -123,7 +123,7 @@ pub(crate) fn compress_bib_white(
 }
 
 pub(crate) fn get_bib_command_or_entry_and_process(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     cur_macro_loc: &mut HashPointer<hash::Macro>,
     field_name_loc: &mut HashPointer<BstFn>,

@@ -5,17 +5,17 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use texyon::engines::tex::{
-    Diagnostic, DiagnosticKind, EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession,
-    SourceSnapshot, SyncIndex, SyncRect, TexEngine, TexOutcome,
+    Diagnostic, DiagnosticKind, EngineCancellation, EngineEnv, EnginePreviewConfig,
+    IncrementalXeTeXSession, SourceSnapshot, SyncIndex, SyncRect, TexEngine, TexOutcome,
 };
 use texyon::io::testing::SingleInputFileIo;
-use texyon::io::{IoProvider, IoStack, MemoryIo};
+use texyon::io::{IoStack, MemoryIo};
 use texyon::live_preview::{
     AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, FramePatch, FrameSink,
     PreviewSession, PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport,
     ResidentPreviewProcessor, ResidentXeTeX, SessionConfig, SessionHost, SourceSet, WorkerRun,
 };
-use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_bridge_core::{BridgeHost, CoreBridgeLauncher, Held, MinimalDriver, SecuritySettings};
 use texyon_io_base::stdstreams::BufferedPrimaryIo;
 use texyon_preview_protocol::{
     FramePhase, OperationMetrics, ProtocolLimits, RequestSeq, SourceFile,
@@ -128,9 +128,9 @@ fn cold_output_with_children(bytes: &[u8], children: &[(&str, &[u8])], name: &st
     }
     {
         let io = IoStack::new(vec![
-            &mut output as &mut dyn IoProvider,
-            &mut primary as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
+            Box::new(&mut output),
+            Box::new(&mut primary),
+            Box::new(&mut format),
         ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
@@ -165,29 +165,34 @@ fn assemble_resident_output(
     assembler.assemble(base, fragment).unwrap()
 }
 
+/// A resident session writing into `outputs`, over the plain format.
+fn resident_session(config: EnginePreviewConfig, outputs: &MemoryIo) -> IncrementalXeTeXSession {
+    let format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let io = IoStack::new(vec![Box::new(outputs.share()), Box::new(format)]);
+    let host = BridgeHost::new(
+        Held::Owned(Box::new(MinimalDriver::new(io))),
+        Held::Owned(Box::new(NoopStatusBackend::default())),
+        SecuritySettings::default(),
+    );
+    IncrementalXeTeXSession::new(config, EngineEnv::new(host)).unwrap()
+}
+
 #[test]
 fn session_open_edit_and_revert_are_byte_stable() {
     let _serial = session_test_lock();
     util::set_test_root();
     let cold_original = cold_xdv(b"A\n\\bye\n");
     let cold_edited = cold_xdv(b"B\n\\bye\n");
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut open_output = MemoryIo::new(true);
+    let outputs = MemoryIo::new(true);
+    let open_output = outputs.share();
     let mut config = EnginePreviewConfig::new("plain.fmt");
     config.verify_rewinds = true;
-    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let mut session = resident_session(config, &outputs);
 
     let original = snapshot(b"A\n\\bye\n");
     {
-        let io = IoStack::new(vec![
-            &mut open_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.open(&mut launcher, original.clone()).unwrap();
+        let frame = session.open(original.clone()).unwrap();
         assert_eq!(frame.outcome, TexOutcome::Spotless);
     }
     let original_xdv = output_bytes(&open_output, "session.xdv");
@@ -196,15 +201,9 @@ fn session_open_edit_and_revert_are_byte_stable() {
     let edited = original
         .replace("session", Arc::from(&b"B\n\\bye\n"[..]))
         .unwrap();
-    let mut edit_output = MemoryIo::new(true);
+    let edit_output = outputs.share();
     {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session
-            .edit(&mut launcher, edited.snapshot.clone(), None)
-            .unwrap();
+        let frame = session.edit(edited.snapshot.clone(), None).unwrap();
         assert_eq!(frame.outcome, TexOutcome::Spotless);
     }
     assert_eq!(output_bytes(&edit_output, "session.xdv"), cold_edited);
@@ -213,17 +212,11 @@ fn session_open_edit_and_revert_are_byte_stable() {
         .snapshot
         .replace("session.tex", Arc::from(&b"A\n\\bye\n"[..]))
         .unwrap();
-    let mut revert_output = MemoryIo::new(true);
+    let revert_output = outputs.share();
     {
-        let io = IoStack::new(vec![&mut revert_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session
-            .edit(&mut launcher, reverted.snapshot, None)
-            .unwrap();
+        let frame = session.edit(reverted.snapshot, None).unwrap();
         assert_eq!(frame.outcome, TexOutcome::Spotless);
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
     }
     assert_eq!(output_bytes(&revert_output, "session.xdv"), original_xdv);
 }
@@ -248,38 +241,22 @@ fn final_cleanup_eqtb_mutations_are_rewindable() {
         "REVISED! FINALIZATION MARKER",
     );
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut config = EnginePreviewConfig::new("plain.fmt");
     config.verify_rewinds = true;
-    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(config, &outputs);
     let source = snapshot(original.as_bytes());
-    let mut first_output = MemoryIo::new(true);
-    let opened = {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap()
-    };
+    let opened = { session.open(source.clone()).unwrap() };
     assert!(opened.checkpoint_rungs > 1);
 
     let changed = source
         .replace("session.tex", Arc::from(edited.as_bytes()))
         .unwrap();
-    let mut edit_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
+        let frame = session.edit(changed.snapshot, None).unwrap();
         assert_eq!(frame.outcome, TexOutcome::Spotless);
         assert!(frame.replay_rung > 0);
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
     }
 }
 
@@ -287,29 +264,20 @@ fn final_cleanup_eqtb_mutations_are_rewindable() {
 fn resident_pdf_probe_teardown_preserves_the_outer_registry() {
     let _serial = session_test_lock();
     util::set_test_root();
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut output = MemoryIo::new(true);
+    let outputs = MemoryIo::new(true);
+    let mut output = outputs.share();
     output.create_entry(
         "issue393_ungetc_trigger.pdf",
         std::fs::read(util::test_path(&["assets", "issue393_ungetc_trigger.pdf"])).unwrap(),
     );
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     {
-        let io = IoStack::new(vec![
-            &mut output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let frame = session
-            .open(
-                &mut launcher,
-                snapshot(b"\\XeTeXpdffile issue393_ungetc_trigger.pdf\\bye\n"),
-            )
+            .open(snapshot(
+                b"\\XeTeXpdffile issue393_ungetc_trigger.pdf\\bye\n",
+            ))
             .unwrap();
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
         assert!(matches!(
             frame.outcome,
             TexOutcome::Spotless | TexOutcome::Warnings
@@ -338,21 +306,11 @@ fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
     let cold_edited = cold_xdv(edited.as_bytes());
     let cold_edited_again = cold_xdv(edited_again.as_bytes());
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let source = snapshot(original.as_bytes());
-    let mut first_output = MemoryIo::new(true);
-    let opened = {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap()
-    };
+    let first_output = outputs.share();
+    let opened = { session.open(source.clone()).unwrap() };
     assert!(opened.checkpoint_rungs > 1);
     assert_eq!(output_bytes(&first_output, "session.xdv"), cold_original);
 
@@ -360,14 +318,8 @@ fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
         .replace("session.tex", Arc::from(edited.as_bytes()))
         .unwrap();
     let changed_snapshot = changed.snapshot.clone();
-    let mut edit_output = MemoryIo::new(true);
-    let frame = {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.edit(&mut launcher, changed.snapshot, None).unwrap()
-    };
+    let edit_output = outputs.share();
+    let frame = { session.edit(changed.snapshot, None).unwrap() };
     let splice_at = frame.splice_at.expect("late edit fell back to rung zero");
     assert!(splice_at > 0);
     assert!(frame.replay_rung > 0);
@@ -392,16 +344,10 @@ fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
     let changed_again = changed_snapshot
         .replace("session.tex", Arc::from(edited_again.as_bytes()))
         .unwrap();
-    let mut second_output = MemoryIo::new(true);
+    let second_output = outputs.share();
     let second_frame = {
-        let io = IoStack::new(vec![&mut second_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session
-            .edit(&mut launcher, changed_again.snapshot, None)
-            .unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.edit(changed_again.snapshot, None).unwrap();
+        session.finish().unwrap();
         frame
     };
     let second_splice = second_frame
@@ -440,36 +386,19 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
     let cold_edited = cold_xdv_with_child(primary, Some(edited_child.as_bytes()));
     let cold_edited_again = cold_xdv_with_child(primary, Some(edited_again.as_bytes()));
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let source = snapshot_with_child(primary, Some(child.as_bytes()));
-    let mut first_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap();
+        session.open(source.clone()).unwrap();
     }
 
     let changed = source
         .replace("child.tex", Arc::from(edited_child.as_bytes()))
         .unwrap();
     let changed_snapshot = changed.snapshot;
-    let mut edit_output = MemoryIo::new(true);
-    let frame = {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session
-            .edit(&mut launcher, changed_snapshot.clone(), None)
-            .unwrap()
-    };
+    let edit_output = outputs.share();
+    let frame = { session.edit(changed_snapshot.clone(), None).unwrap() };
     let splice_at = frame
         .splice_at
         .expect("late child edit did not use an open-child fence");
@@ -493,16 +422,10 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
     let changed_again = changed_snapshot
         .replace("child.tex", Arc::from(edited_again.as_bytes()))
         .unwrap();
-    let mut second_output = MemoryIo::new(true);
+    let second_output = outputs.share();
     let second_frame = {
-        let io = IoStack::new(vec![&mut second_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session
-            .edit(&mut launcher, changed_again.snapshot, None)
-            .unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.edit(changed_again.snapshot, None).unwrap();
+        session.finish().unwrap();
         frame
     };
     assert!(second_frame.replay_rung > frame.replay_rung);
@@ -552,37 +475,23 @@ fn deep_nested_input_edit_restores_every_open_parent() {
     let cold_original = cold_output_with_children(primary, &children, "session.xdv");
     let cold_edited = cold_output_with_children(primary, &edited_children, "session.xdv");
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut config = EnginePreviewConfig::new("plain.fmt");
     config.verify_rewinds = true;
-    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(config, &outputs);
     let source = snapshot_with_children(primary, &children);
-    let mut open_output = MemoryIo::new(true);
-    let opened = {
-        let io = IoStack::new(vec![
-            &mut open_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap()
-    };
+    let open_output = outputs.share();
+    let opened = { session.open(source.clone()).unwrap() };
     assert!(opened.checkpoint_rungs > 1);
     assert_eq!(output_bytes(&open_output, "session.xdv"), cold_original);
 
     let changed = source
         .replace("nested/deep/leaf.tex", Arc::from(edited_leaf.as_bytes()))
         .unwrap();
-    let mut edit_output = MemoryIo::new(true);
+    let edit_output = outputs.share();
     let frame = {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.edit(changed.snapshot, None).unwrap();
+        session.finish().unwrap();
         frame
     };
     let splice_at = frame
@@ -620,34 +529,19 @@ fn changing_a_consumed_child_falls_back_to_rung_zero() {
     let edited_child = b"EDITED CHILD\\par\n";
     let cold_edited = cold_xdv_with_child(primary.as_bytes(), Some(edited_child));
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let source = snapshot_with_child(primary.as_bytes(), Some(original_child));
-    let mut first_output = MemoryIo::new(true);
-    let opened = {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap()
-    };
+    let opened = { session.open(source.clone()).unwrap() };
     assert!(opened.checkpoint_rungs > 1);
 
     let changed = source
         .replace("child.tex", Arc::from(&edited_child[..]))
         .unwrap();
-    let mut edit_output = MemoryIo::new(true);
+    let edit_output = outputs.share();
     let frame = {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.edit(changed.snapshot, None).unwrap();
+        session.finish().unwrap();
         frame
     };
     assert_eq!(frame.splice_at, None);
@@ -770,34 +664,22 @@ fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
     let cold_edited = cold_xdv(edited.as_bytes());
     let cold_aux = cold_output_with_child(edited.as_bytes(), None, "state.aux");
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let source = snapshot(original.as_bytes());
-    let mut first_output = MemoryIo::new(true);
+    let first_output = outputs.share();
     {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, source.clone()).unwrap();
+        session.open(source.clone()).unwrap();
     }
     assert_eq!(output_bytes(&first_output, "session.xdv"), cold_original);
 
     let changed = source
         .replace("session.tex", Arc::from(edited.as_bytes()))
         .unwrap();
-    let mut edit_output = MemoryIo::new(true);
+    let edit_output = outputs.share();
     let frame = {
-        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.edit(changed.snapshot, None).unwrap();
+        session.finish().unwrap();
         frame
     };
     let splice_at = frame
@@ -825,45 +707,28 @@ fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
 fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
     let _serial = session_test_lock();
     util::set_test_root();
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut first_output = MemoryIo::new(true);
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let first_output = outputs.share();
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let valid = snapshot(b"A\n\\bye\n");
     {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, valid.clone()).unwrap();
+        session.open(valid.clone()).unwrap();
     }
     let expected = output_bytes(&first_output, "session.xdv");
 
     let broken = valid.replace("session", Arc::from(&b"A\n"[..])).unwrap();
-    let mut broken_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![&mut broken_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, broken.snapshot, None).unwrap();
+        let frame = session.edit(broken.snapshot, None).unwrap();
         assert!(frame.aborted.is_some());
         assert!(!session.is_dead());
     }
 
-    let mut recovered_output = MemoryIo::new(true);
+    let recovered_output = outputs.share();
     {
-        let io = IoStack::new(vec![&mut recovered_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, valid, None).unwrap();
+        let frame = session.edit(valid, None).unwrap();
         assert_eq!(frame.outcome, TexOutcome::Spotless);
         assert!(frame.aborted.is_none());
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
     }
     assert_eq!(output_bytes(&recovered_output, "session.xdv"), expected);
 }
@@ -872,55 +737,31 @@ fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
 fn cooperative_cancel_rewinds_and_next_edit_recovers() {
     let _serial = session_test_lock();
     util::set_test_root();
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let cancellation = EngineCancellation::new();
     let mut config = EnginePreviewConfig::new("plain.fmt");
     config.cancellation = cancellation.clone();
-    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(config, &outputs);
     let source = snapshot(b"A\n\\bye\n");
 
-    let mut first_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        assert!(
-            !session
-                .open(&mut launcher, source.clone())
-                .unwrap()
-                .cancelled
-        );
+        assert!(!session.open(source.clone()).unwrap().cancelled);
     }
 
     cancellation.request();
-    let mut cancelled_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![&mut cancelled_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, source.clone(), None).unwrap();
+        let frame = session.edit(source.clone(), None).unwrap();
         assert!(frame.cancelled);
         assert!(frame.aborted.is_none());
         assert!(!session.is_dead());
     }
 
     cancellation.rearm();
-    let mut recovered_output = MemoryIo::new(true);
     {
-        let io = IoStack::new(vec![&mut recovered_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, source, None).unwrap();
+        let frame = session.edit(source, None).unwrap();
         assert!(!frame.cancelled);
         assert_eq!(frame.outcome, TexOutcome::Spotless);
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
     }
 }
 
@@ -1920,31 +1761,19 @@ fn editor_owned_child_edits_are_read_from_the_snapshot() {
         ],
     )
     .unwrap();
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
-    let mut first_output = MemoryIo::new(true);
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
+    let first_output = outputs.share();
     {
-        let io = IoStack::new(vec![
-            &mut first_output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.open(&mut launcher, sources.clone()).unwrap();
+        session.open(sources.clone()).unwrap();
     }
     assert_eq!(output_bytes(&first_output, "session.xdv"), cold_first);
 
     let update = sources.replace("child", Arc::from(&b"B\n"[..])).unwrap();
-    let mut second_output = MemoryIo::new(true);
+    let second_output = outputs.share();
     {
-        let io = IoStack::new(vec![&mut second_output as &mut dyn IoProvider]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        session.edit(&mut launcher, update.snapshot, None).unwrap();
-        session.finish(&mut launcher).unwrap();
+        session.edit(update.snapshot, None).unwrap();
+        session.finish().unwrap();
     }
     assert_eq!(output_bytes(&second_output, "session.xdv"), cold_second);
 }
@@ -1956,20 +1785,12 @@ fn resident_synctex_index_stays_in_memory_and_tracks_children() {
     let primary = b"\\input child\nMAIN SOURCE LINE\\par\n\\bye\n";
     let child = b"CHILD SOURCE LINE\\par\n";
     let sources = snapshot_with_child(primary, Some(child));
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
-    let mut output = MemoryIo::new(true);
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
+    let output = outputs.share();
     let frame = {
-        let io = IoStack::new(vec![
-            &mut output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.open(&mut launcher, sources).unwrap();
-        session.finish(&mut launcher).unwrap();
+        let frame = session.open(sources).unwrap();
+        session.finish().unwrap();
         frame
     };
 
@@ -2024,9 +1845,9 @@ fn resident_synctex_index_matches_the_cold_synctex_file() {
     cold_output.create_entry("child.tex", child.to_vec());
     {
         let io = IoStack::new(vec![
-            &mut cold_output as &mut dyn IoProvider,
-            &mut primary_io as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
+            Box::new(&mut cold_output),
+            Box::new(&mut primary_io),
+            Box::new(&mut format),
         ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
@@ -2049,22 +1870,13 @@ fn resident_synctex_index_matches_the_cold_synctex_file() {
         .replace("Input:2:\n", "Input:2:child.tex\n");
     let cold = SyncIndex::from_synctex(&text);
 
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
-    let mut output = MemoryIo::new(true);
+    let outputs = MemoryIo::new(true);
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let frame = {
-        let io = IoStack::new(vec![
-            &mut output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let frame = session
-            .open(&mut launcher, snapshot_with_child(primary, Some(child)))
+            .open(snapshot_with_child(primary, Some(child)))
             .unwrap();
-        session.finish(&mut launcher).unwrap();
+        session.finish().unwrap();
         frame
     };
     let resident = &frame.sync_index;
@@ -2127,22 +1939,12 @@ fn bom_crlf_and_utf16_inputs_match_cold_decoding() {
         };
         let expected = cold_xdv(&bytes);
         let sources = snapshot(&bytes);
-        let mut format = SingleInputFileIo::new(
-            &util::ensure_plain_format().expect("could not build plain format"),
-        );
-        let mut output = MemoryIo::new(true);
-        let mut session =
-            IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+        let outputs = MemoryIo::new(true);
+        let output = outputs.share();
+        let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
         {
-            let io = IoStack::new(vec![
-                &mut output as &mut dyn IoProvider,
-                &mut format as &mut dyn IoProvider,
-            ]);
-            let mut hooks = MinimalDriver::new(io);
-            let mut status = NoopStatusBackend::default();
-            let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-            session.open(&mut launcher, sources).unwrap();
-            session.finish(&mut launcher).unwrap();
+            session.open(sources).unwrap();
+            session.finish().unwrap();
         }
         assert_eq!(output_bytes(&output, "session.xdv"), expected);
     }
@@ -2153,21 +1955,13 @@ fn page_manifest_matches_final_multi_page_xdv_spans() {
     let _serial = session_test_lock();
     util::set_test_root();
     let input = b"A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
-    let mut format =
-        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut output = MemoryIo::new(true);
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let outputs = MemoryIo::new(true);
+    let output = outputs.share();
+    let mut session = resident_session(EnginePreviewConfig::new("plain.fmt"), &outputs);
     let frame;
     {
-        let io = IoStack::new(vec![
-            &mut output as &mut dyn IoProvider,
-            &mut format as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        frame = session.open(&mut launcher, snapshot(input)).unwrap();
-        session.finish(&mut launcher).unwrap();
+        frame = session.open(snapshot(input)).unwrap();
+        session.finish().unwrap();
     }
 
     let xdv = output_bytes(&output, "session.xdv");

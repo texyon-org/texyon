@@ -124,7 +124,11 @@ fn run_engine(
     let mut primary = Source(source.into_bytes());
     let mut status = Reports::default();
     {
-        let io = IoStack::new(vec![outputs, &mut primary, &mut fonts]);
+        let io = IoStack::new(vec![
+            Box::new(outputs),
+            Box::new(&mut primary),
+            Box::new(&mut fonts),
+        ]);
         let mut hooks = MinimalDriver::new(io);
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let _ = TexEngine::default()

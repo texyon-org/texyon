@@ -29,11 +29,11 @@ texyon_bridge_graphite2 = { path = "../bridge_graphite2", version = "0.0.0-dev.0
 texyon_bridge_harfbuzz = { path = "../bridge_harfbuzz", version = "0.0.0-dev.0" }
 texyon_bridge_icu = { path = "../bridge_icu", version = "0.0.0-dev.0" }
 texyon_errors = { path = "../errors", version = "0.0.0-dev.0" }
+texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
 texyon_pdf_io = { path = "../pdf_io", version = "0.0.0-dev.0" }
 texyon_xetex_layout = { path = "../xetex_layout", version = "0.0.0-dev.0" }
 
 [dev-dependencies]
-texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
 texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 
 [build-dependencies]

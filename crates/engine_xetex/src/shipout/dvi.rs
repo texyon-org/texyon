@@ -4,7 +4,7 @@ use std::mem;
 
 use crate::base::consts::TEX_INFINITY;
 use crate::base::units::Scaled;
-use crate::ffi::bridge::output_write;
+use crate::env::EngineEnv;
 use crate::memory::glyph_arena::FixedPoint;
 use crate::preview::page_manifest::PageManifest;
 use crate::print::errors::Abort;
@@ -72,7 +72,6 @@ impl MoveReg {
 
 #[derive(Clone, Default)]
 pub(crate) struct DviWriter {
-    pub file: usize,
     buf: Vec<u8>,
     limit: i32,
     ptr: i32,
@@ -85,6 +84,14 @@ pub(crate) struct DviWriter {
     /// The push depth (`cur_s`): -1 between pages, -2 once the file has overflowed.
     pub depth: i32,
     pub max_push: i32,
+}
+
+/// What a `fnt_def` records about a TFM font besides its name.
+#[derive(Clone, Copy)]
+pub(crate) struct DviFontMetrics {
+    pub check: [u8; 4],
+    pub size: Scaled,
+    pub design_size: Scaled,
 }
 
 impl DviWriter {
@@ -130,7 +137,6 @@ impl DviWriter {
     /// the page manifest.
     pub(crate) fn restore(&mut self, saved: &DviWriter) {
         let DviWriter {
-            file,
             ref buf,
             limit,
             ptr,
@@ -143,7 +149,6 @@ impl DviWriter {
         } = *saved;
         self.buf.clone_from(buf);
         *self = DviWriter {
-            file,
             buf: mem::take(&mut self.buf),
             limit,
             ptr,
@@ -156,8 +161,8 @@ impl DviWriter {
         };
     }
 
-    fn write_to_file(&self, a: i32, b: i32) -> Result<(), Abort> {
-        if !output_write(self.file, &self.buf[a as usize..=b as usize]) {
+    fn write_to_file(&self, env: &mut EngineEnv, a: i32, b: i32) -> Result<(), Abort> {
+        if !env.write_xdv(&self.buf[a as usize..=b as usize]) {
             return Err(Abort::Internal("failed to write data to XDV file"));
         }
         Ok(())
@@ -171,15 +176,15 @@ impl DviWriter {
         Ok(())
     }
 
-    fn swap(&mut self) -> Result<(), Abort> {
+    fn swap(&mut self, env: &mut EngineEnv) -> Result<(), Abort> {
         self.check_length()?;
         if self.limit == DVI_BUF_SIZE {
-            self.write_to_file(0, HALF_BUF - 1)?;
+            self.write_to_file(env, 0, HALF_BUF - 1)?;
             self.limit = HALF_BUF;
             self.offset += DVI_BUF_SIZE;
             self.ptr = 0;
         } else {
-            self.write_to_file(HALF_BUF, DVI_BUF_SIZE - 1)?;
+            self.write_to_file(env, HALF_BUF, DVI_BUF_SIZE - 1)?;
             self.limit = DVI_BUF_SIZE;
         }
         self.gone += HALF_BUF;
@@ -187,18 +192,18 @@ impl DviWriter {
     }
 
     #[inline]
-    fn out(&mut self, c: u8) -> Result<(), Abort> {
+    fn out(&mut self, env: &mut EngineEnv, c: u8) -> Result<(), Abort> {
         self.manifest.record_byte(c);
         self.buf[self.ptr as usize] = c;
         self.ptr += 1;
         if self.ptr == self.limit {
-            self.swap()?;
+            self.swap(env)?;
         }
         Ok(())
     }
 
     #[inline]
-    fn bytes(&mut self, mut bytes: &[u8]) -> Result<(), Abort> {
+    fn bytes(&mut self, env: &mut EngineEnv, mut bytes: &[u8]) -> Result<(), Abort> {
         while !bytes.is_empty() {
             let ptr = self.ptr as usize;
             let n = bytes.len().min(self.limit as usize - ptr);
@@ -207,66 +212,71 @@ impl DviWriter {
             self.ptr += n as i32;
             bytes = &bytes[n..];
             if self.ptr == self.limit {
-                self.swap()?;
+                self.swap(env)?;
             }
         }
         Ok(())
     }
 
     #[inline]
-    fn four(&mut self, x: i32) -> Result<(), Abort> {
-        self.bytes(&x.to_be_bytes())
+    fn four(&mut self, env: &mut EngineEnv, x: i32) -> Result<(), Abort> {
+        self.bytes(env, &x.to_be_bytes())
     }
 
     #[inline]
-    fn two(&mut self, x: u16) -> Result<(), Abort> {
-        self.bytes(&x.to_be_bytes())
+    fn two(&mut self, env: &mut EngineEnv, x: u16) -> Result<(), Abort> {
+        self.bytes(env, &x.to_be_bytes())
     }
 
-    fn text(&mut self, s: &[u16]) -> Result<(), Abort> {
+    fn text(&mut self, env: &mut EngineEnv, s: &[u16]) -> Result<(), Abort> {
         for &c in s {
-            self.out(c as u8)?;
+            self.out(env, c as u8)?;
         }
         Ok(())
     }
 
     /// `pre`, up to the magnification that `prepare_mag` may still change.
-    pub(crate) fn begin_preamble(&mut self, id: u8) -> Result<(), Abort> {
-        self.bytes(&[PRE, id])?;
-        self.four(NUMERATOR)?;
-        self.four(DENOMINATOR)
+    pub(crate) fn begin_preamble(&mut self, env: &mut EngineEnv, id: u8) -> Result<(), Abort> {
+        self.bytes(env, &[PRE, id])?;
+        self.four(env, NUMERATOR)?;
+        self.four(env, DENOMINATOR)
     }
 
-    pub(crate) fn end_preamble(&mut self, mag: i32, comment: &[u8]) -> Result<(), Abort> {
-        self.four(mag)?;
-        self.out(comment.len() as u8)?;
-        self.bytes(comment)
+    pub(crate) fn end_preamble(
+        &mut self,
+        env: &mut EngineEnv,
+        mag: i32,
+        comment: &[u8],
+    ) -> Result<(), Abort> {
+        self.four(env, mag)?;
+        self.out(env, comment.len() as u8)?;
+        self.bytes(env, comment)
     }
 
-    pub(crate) fn bop(&mut self, counts: [i32; 10]) -> Result<(), Abort> {
+    pub(crate) fn bop(&mut self, env: &mut EngineEnv, counts: [i32; 10]) -> Result<(), Abort> {
         let page_loc = self.pos();
         self.manifest.begin_page(page_loc as u64);
-        self.out(BOP)?;
+        self.out(env, BOP)?;
         for count in counts {
-            self.four(count)?;
+            self.four(env, count)?;
         }
-        self.four(self.last_bop)?;
+        self.four(env, self.last_bop)?;
         self.last_bop = page_loc;
         Ok(())
     }
 
-    pub(crate) fn eop(&mut self, logical_clock: u64) -> Result<(), Abort> {
-        self.out(EOP)?;
+    pub(crate) fn eop(&mut self, env: &mut EngineEnv, logical_clock: u64) -> Result<(), Abort> {
+        self.out(env, EOP)?;
         self.manifest.finish_page(logical_clock);
         Ok(())
     }
 
     /// Enters a box: `push` unless at page level. Returns the position to
     /// hand back to `leave_level`.
-    pub(crate) fn enter_level(&mut self) -> Result<i32, Abort> {
+    pub(crate) fn enter_level(&mut self, env: &mut EngineEnv) -> Result<i32, Abort> {
         self.depth += 1;
         if self.depth > 0 {
-            self.out(PUSH)?;
+            self.out(env, PUSH)?;
         }
         self.max_push = self.max_push.max(self.depth);
         Ok(self.pos())
@@ -274,13 +284,13 @@ impl DviWriter {
 
     /// Leaves a box entered at `save_loc`: `pop`, or drop the `push` if the
     /// box wrote nothing.
-    pub(crate) fn leave_level(&mut self, save_loc: i32) -> Result<(), Abort> {
+    pub(crate) fn leave_level(&mut self, env: &mut EngineEnv, save_loc: i32) -> Result<(), Abort> {
         if self.depth > 0 {
             if save_loc == self.pos() && self.ptr > 0 {
                 self.ptr -= 1;
                 self.manifest.pop_byte();
             } else {
-                self.out(POP)?;
+                self.out(env, POP)?;
             }
         }
         self.depth -= 1;
@@ -289,138 +299,175 @@ impl DviWriter {
 
     /// Pops the levels and ends the page left open by an interrupted
     /// shipout. Returns whether there was one.
-    pub(crate) fn close_open_page(&mut self, logical_clock: u64) -> Result<bool, Abort> {
+    pub(crate) fn close_open_page(
+        &mut self,
+        env: &mut EngineEnv,
+        logical_clock: u64,
+    ) -> Result<bool, Abort> {
         if self.depth < 0 {
             return Ok(false);
         }
         while self.depth > 0 {
-            self.out(POP)?;
+            self.out(env, POP)?;
             self.depth -= 1;
         }
-        self.eop(logical_clock)?;
+        self.eop(env, logical_clock)?;
         self.depth = -1;
         Ok(true)
     }
 
     #[inline]
-    pub(crate) fn set_char(&mut self, c: u16) -> Result<(), Abort> {
+    pub(crate) fn set_char(&mut self, env: &mut EngineEnv, c: u16) -> Result<(), Abort> {
         if c >= 128 {
-            self.out(SET1)?;
+            self.out(env, SET1)?;
         }
-        self.out(c as u8)
+        self.out(env, c as u8)
     }
 
-    pub(crate) fn set_rule(&mut self, height: Scaled, width: Scaled) -> Result<(), Abort> {
-        self.rule(SET_RULE, height, width)
+    pub(crate) fn set_rule(
+        &mut self,
+        env: &mut EngineEnv,
+        height: Scaled,
+        width: Scaled,
+    ) -> Result<(), Abort> {
+        self.rule(env, SET_RULE, height, width)
     }
 
-    pub(crate) fn put_rule(&mut self, height: Scaled, width: Scaled) -> Result<(), Abort> {
-        self.rule(PUT_RULE, height, width)
+    pub(crate) fn put_rule(
+        &mut self,
+        env: &mut EngineEnv,
+        height: Scaled,
+        width: Scaled,
+    ) -> Result<(), Abort> {
+        self.rule(env, PUT_RULE, height, width)
     }
 
-    fn rule(&mut self, opcode: u8, height: Scaled, width: Scaled) -> Result<(), Abort> {
-        self.out(opcode)?;
-        self.four(height.raw())?;
-        self.four(width.raw())
+    fn rule(
+        &mut self,
+        env: &mut EngineEnv,
+        opcode: u8,
+        height: Scaled,
+        width: Scaled,
+    ) -> Result<(), Abort> {
+        self.out(env, opcode)?;
+        self.four(env, height.raw())?;
+        self.four(env, width.raw())
     }
 
-    pub(crate) fn fnt(&mut self, k: i32) -> Result<(), Abort> {
+    pub(crate) fn fnt(&mut self, env: &mut EngineEnv, k: i32) -> Result<(), Abort> {
         if k < 64 {
-            self.out(FNT_NUM_0 + k as u8)
+            self.out(env, FNT_NUM_0 + k as u8)
         } else if k < 256 {
-            self.bytes(&[FNT1, k as u8])
+            self.bytes(env, &[FNT1, k as u8])
         } else {
-            self.bytes(&[FNT1 + 1, (k / 256) as u8, (k % 256) as u8])
+            self.bytes(env, &[FNT1 + 1, (k / 256) as u8, (k % 256) as u8])
         }
     }
 
     pub(crate) fn fnt_def(
         &mut self,
+        env: &mut EngineEnv,
         k: i32,
-        check: [u8; 4],
-        size: Scaled,
-        design_size: Scaled,
+        metrics: DviFontMetrics,
         area: &[u16],
         name: &[u16],
     ) -> Result<(), Abort> {
         if k < 256 {
-            self.bytes(&[FNT_DEF1, k as u8])?;
+            self.bytes(env, &[FNT_DEF1, k as u8])?;
         } else {
-            self.bytes(&[FNT_DEF1 + 1, (k / 256) as u8, (k % 256) as u8])?;
+            self.bytes(env, &[FNT_DEF1 + 1, (k / 256) as u8, (k % 256) as u8])?;
         }
-        self.bytes(&check)?;
-        self.four(size.raw())?;
-        self.four(design_size.raw())?;
-        self.bytes(&[area.len() as u8, name.len() as u8])?;
-        self.text(area)?;
-        self.text(name)
+        self.bytes(env, &metrics.check)?;
+        self.four(env, metrics.size.raw())?;
+        self.four(env, metrics.design_size.raw())?;
+        self.bytes(env, &[area.len() as u8, name.len() as u8])?;
+        self.text(env, area)?;
+        self.text(env, name)
     }
 
-    pub(crate) fn native_font_def(&mut self, k: i32, def: &[u8]) -> Result<(), Abort> {
-        self.out(DEFINE_NATIVE_FONT)?;
-        self.four(k)?;
-        self.bytes(def)
+    pub(crate) fn native_font_def(
+        &mut self,
+        env: &mut EngineEnv,
+        k: i32,
+        def: &[u8],
+    ) -> Result<(), Abort> {
+        self.out(env, DEFINE_NATIVE_FONT)?;
+        self.four(env, k)?;
+        self.bytes(env, def)
     }
 
-    pub(crate) fn set_glyph(&mut self, width: Scaled, glyph: u16) -> Result<(), Abort> {
-        self.out(SET_GLYPHS)?;
-        self.glyph_array(width, &[FixedPoint::default()], &[glyph])
+    pub(crate) fn set_glyph(
+        &mut self,
+        env: &mut EngineEnv,
+        width: Scaled,
+        glyph: u16,
+    ) -> Result<(), Abort> {
+        self.out(env, SET_GLYPHS)?;
+        self.glyph_array(env, width, &[FixedPoint::default()], &[glyph])
     }
 
     pub(crate) fn set_glyphs(
         &mut self,
+        env: &mut EngineEnv,
         width: Scaled,
         locations: &[FixedPoint],
         gids: &[u16],
     ) -> Result<(), Abort> {
-        self.out(SET_GLYPHS)?;
-        self.glyph_array(width, locations, gids)
+        self.out(env, SET_GLYPHS)?;
+        self.glyph_array(env, width, locations, gids)
     }
 
     pub(crate) fn set_text_and_glyphs(
         &mut self,
+        env: &mut EngineEnv,
         text: &[u16],
         width: Scaled,
         locations: &[FixedPoint],
         gids: &[u16],
     ) -> Result<(), Abort> {
-        self.out(SET_TEXT_AND_GLYPHS)?;
-        self.two(text.len() as u16)?;
+        self.out(env, SET_TEXT_AND_GLYPHS)?;
+        self.two(env, text.len() as u16)?;
         for &unit in text {
-            self.two(unit)?;
+            self.two(env, unit)?;
         }
-        self.glyph_array(width, locations, gids)
+        self.glyph_array(env, width, locations, gids)
     }
 
     fn glyph_array(
         &mut self,
+        env: &mut EngineEnv,
         width: Scaled,
         locations: &[FixedPoint],
         gids: &[u16],
     ) -> Result<(), Abort> {
-        self.four(width.raw())?;
-        self.two(gids.len() as u16)?;
+        self.four(env, width.raw())?;
+        self.two(env, gids.len() as u16)?;
         for loc in locations {
-            self.four(loc.x.raw())?;
-            self.four(loc.y.raw())?;
+            self.four(env, loc.x.raw())?;
+            self.four(env, loc.y.raw())?;
         }
         for &gid in gids {
-            self.two(gid)?;
+            self.two(env, gid)?;
         }
         Ok(())
     }
-    pub(crate) fn special(&mut self, s: &[u16]) -> Result<(), Abort> {
+    pub(crate) fn special(&mut self, env: &mut EngineEnv, s: &[u16]) -> Result<(), Abort> {
         let len = s.len();
         if len < 256 {
-            self.bytes(&[XXX1, len as u8])?;
+            self.bytes(env, &[XXX1, len as u8])?;
         } else {
-            self.out(XXX4)?;
-            self.four(len as i32)?;
+            self.out(env, XXX4)?;
+            self.four(env, len as i32)?;
         }
-        self.text(s)
+        self.text(env, s)
     }
 
-    pub(crate) fn movement(&mut self, axis: Axis, w: Scaled) -> Result<(), Abort> {
+    pub(crate) fn movement(
+        &mut self,
+        env: &mut EngineEnv,
+        axis: Axis,
+        w: Scaled,
+    ) -> Result<(), Abort> {
         let w = w.raw();
         let len = if w.wrapping_abs() >= 0x800000 {
             4
@@ -431,12 +478,17 @@ impl DviWriter {
         } else {
             1
         };
-        self.out(axis.op1() + len as u8 - 1)?;
-        self.bytes(&w.to_be_bytes()[4 - len..])
+        self.out(env, axis.op1() + len as u8 - 1)?;
+        self.bytes(env, &w.to_be_bytes()[4 - len..])
     }
 
-    pub(crate) fn movement_by_reg(&mut self, axis: Axis, reg: MoveReg) -> Result<(), Abort> {
-        self.out(axis.op1() + reg.delta() - 1)
+    pub(crate) fn movement_by_reg(
+        &mut self,
+        env: &mut EngineEnv,
+        axis: Axis,
+        reg: MoveReg,
+    ) -> Result<(), Abort> {
+        self.out(env, axis.op1() + reg.delta() - 1)
     }
 
     /// Turns the movement at file position `location` into one that also sets
@@ -455,47 +507,51 @@ impl DviWriter {
     }
 
     /// `post`, up to the magnification that `prepare_mag` may still change.
-    pub(crate) fn begin_postamble(&mut self) -> Result<(), Abort> {
-        self.out(POST)?;
-        self.four(self.last_bop)?;
+    pub(crate) fn begin_postamble(&mut self, env: &mut EngineEnv) -> Result<(), Abort> {
+        self.out(env, POST)?;
+        self.four(env, self.last_bop)?;
         self.last_bop = self.pos() - 5;
-        self.four(NUMERATOR)?;
-        self.four(DENOMINATOR)
+        self.four(env, NUMERATOR)?;
+        self.four(env, DENOMINATOR)
     }
 
     pub(crate) fn end_postamble(
         &mut self,
+        env: &mut EngineEnv,
         mag: i32,
         max_v: Scaled,
         max_h: Scaled,
         total_pages: i32,
     ) -> Result<(), Abort> {
-        self.four(mag)?;
-        self.four(max_v.raw())?;
-        self.four(max_h.raw())?;
+        self.four(env, mag)?;
+        self.four(env, max_v.raw())?;
+        self.four(env, max_h.raw())?;
         let max_push = self.max_push;
-        self.bytes(&[
-            (max_push / 256) as u8,
-            (max_push % 256) as u8,
-            ((total_pages / 256) % 256) as u8,
-            (total_pages % 256) as u8,
-        ])
+        self.bytes(
+            env,
+            &[
+                (max_push / 256) as u8,
+                (max_push % 256) as u8,
+                ((total_pages / 256) % 256) as u8,
+                (total_pages % 256) as u8,
+            ],
+        )
     }
 
-    pub(crate) fn finish(&mut self, id: u8) -> Result<(), Abort> {
-        self.out(POST_POST)?;
-        self.four(self.last_bop)?;
-        self.out(id)?;
+    pub(crate) fn finish(&mut self, env: &mut EngineEnv, id: u8) -> Result<(), Abort> {
+        self.out(env, POST_POST)?;
+        self.four(env, self.last_bop)?;
+        self.out(env, id)?;
         let padding = 4 + (DVI_BUF_SIZE - self.ptr) % 4;
         for _ in 0..padding {
-            self.out(223)?;
+            self.out(env, 223)?;
         }
         if self.limit == HALF_BUF {
-            self.write_to_file(HALF_BUF, DVI_BUF_SIZE - 1)?;
+            self.write_to_file(env, HALF_BUF, DVI_BUF_SIZE - 1)?;
         }
         self.check_length()?;
         if self.ptr > 0 {
-            self.write_to_file(0, self.ptr - 1)?;
+            self.write_to_file(env, 0, self.ptr - 1)?;
         }
         Ok(())
     }

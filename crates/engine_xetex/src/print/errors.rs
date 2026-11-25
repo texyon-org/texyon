@@ -13,7 +13,7 @@ use crate::base::params::{IntPar, TokPar};
 use crate::base::token::TokenList;
 use crate::base::units::{BufPos, FontId, StrNumber};
 use crate::engine::cleanup;
-use crate::ffi::bridge::{output_flush, set_error_message};
+use crate::env::EngineEnv;
 use crate::files::io::{FileName, close_files_and_terminate, open_log_file};
 use crate::memory::node::link_of;
 use crate::scanning::input::{TokenType, back_input};
@@ -34,7 +34,7 @@ impl ErrorState {
     }
 }
 
-fn pre_error_message(st: &mut EngineState) {
+fn pre_error_message(st: &mut EngineState, env: &mut EngineEnv) {
     st.shipout.selector = if st.errors.log_opened {
         Selector::TermAndLog
     } else {
@@ -42,54 +42,54 @@ fn pre_error_message(st: &mut EngineState) {
     };
     if st.strings.job_name == StrNumber::NONE {
         // Already on the fatal path, so a log-open failure just leaves TERM_ONLY.
-        let _ = open_log_file(st);
+        let _ = open_log_file(st, env);
     }
     if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
     }
-    print_error_prefix(st);
-    begin_capture(st, DiagnosticKind::Fatal);
+    print_error_prefix(st, env);
+    begin_capture(st, env, DiagnosticKind::Fatal);
 }
 
-fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
+fn post_error_message(st: &mut EngineState, env: &mut EngineEnv, need_to_print_it: bool) {
     let help = st.errors.help_text();
     if let Some(diagnostic) = take_capture(st, help) {
-        emit(st, diagnostic);
+        emit(st, env, diagnostic);
     }
     if st.errors.interaction == InteractionMode::ErrorStop {
         st.errors.interaction = InteractionMode::Scroll;
     }
     if need_to_print_it && st.errors.log_opened {
         // Already committed to a fatal history, so a nested abort is dropped.
-        let _ = finish_error(st);
+        let _ = finish_error(st, env);
     }
     st.errors.history = HISTORY_FATAL_ERROR;
-    let _ = close_files_and_terminate(st);
-    cleanup(st);
-    output_flush(st.shipout.rust_stdout);
+    let _ = close_files_and_terminate(st, env);
+    cleanup(st, env);
+    env.flush_terminal();
 }
 
 /// TeX's `error`, after the message is printed: the context, the help, and
 /// the stop on `--halt-on-error` or the hundredth error.
-pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn finish_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
     }
-    print_char(st, b'.');
-    show_context(st);
+    print_char(st, env, b'.');
+    show_context(st, env);
     if st.config.halt_on_error_p != 0 {
         // A second error while halting would print the help again, so stop at once.
         if !st.errors.halting_on_error {
             st.errors.halting_on_error = true;
-            put_help_on_transcript(st);
+            put_help_on_transcript(st, env);
         }
         st.errors.history = HISTORY_FATAL_ERROR;
         return Err(Abort::HaltOnError);
     }
     if st.errors.interaction == InteractionMode::ErrorStop {
         // TeX asks the terminal for advice, and there is no terminal to answer.
-        print_ln(st);
-        print(st, "? ");
+        print_ln(st, env);
+        print(st, env, "? ");
         // As TeX Live, so the context shows none of the unread line.
         st.input.cur_input.limit = BufPos::ZERO;
         return Err(Abort::Fatal("End of file on the terminal!"));
@@ -97,35 +97,35 @@ pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
 
     st.errors.error_count = st.errors.error_count.wrapping_add(1);
     if st.errors.error_count == 100 {
-        print_nl(st, "(That makes 100 errors; please try again.)");
+        print_nl(st, env, "(That makes 100 errors; please try again.)");
         st.errors.history = HISTORY_FATAL_ERROR;
         return Err(Abort::HundredErrors);
     }
 
-    put_help_on_transcript(st);
+    put_help_on_transcript(st, env);
     Ok(())
 }
 
-fn put_help_on_transcript(st: &mut EngineState) {
+fn put_help_on_transcript(st: &mut EngineState, env: &mut EngineEnv) {
     if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
     }
     if st.errors.use_err_help {
-        print_ln(st);
-        give_err_help(st);
+        print_ln(st, env);
+        give_err_help(st, env);
     } else {
         let lines = st.errors.help_lines;
         let len = st.errors.help_len as usize;
         st.errors.help_len = 0;
         for line in &lines[..len] {
-            print_nl(st, *line);
+            print_nl(st, env, *line);
         }
     }
-    print_ln(st);
+    print_ln(st, env);
     if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.with_terminal();
     }
-    print_ln(st);
+    print_ln(st, env);
 }
 
 /// Why a run ends early. Reported once, by [`Abort::into_history`].
@@ -170,23 +170,26 @@ pub(crate) enum FilePrompt {
 
 pub(crate) fn prompt_file_name(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     prompt: FilePrompt,
     name: FileName,
     path: &[u8],
 ) -> Abort {
     print_nl(
         st,
+        env,
         match prompt {
             FilePrompt::Input => "! I can't find file `",
             FilePrompt::Output => "! I can't write on file `",
         },
     );
-    name.print_to(st);
-    print(st, "'.");
-    show_context(st);
-    print_ln(st);
+    name.print_to(st, env);
+    print(st, env, "'.");
+    show_context(st, env);
+    print_ln(st, env);
     print(
         st,
+        env,
         match prompt {
             FilePrompt::Input => "(Press Enter to retry, or Control-D to exit)",
             FilePrompt::Output => {
@@ -194,9 +197,10 @@ pub(crate) fn prompt_file_name(
             }
         },
     );
-    print_ln(st);
+    print_ln(st, env);
     print_nl(
         st,
+        env,
         match prompt {
             FilePrompt::Input => "Please type another input file name",
             FilePrompt::Output => "Please type another output file name",
@@ -204,7 +208,7 @@ pub(crate) fn prompt_file_name(
     );
     // Only the text of TeX's prompt, the terminal is always empty and never read.
     if st.errors.interaction >= InteractionMode::Scroll {
-        print(st, ": ");
+        print(st, env, ": ");
         // As TeX Live, so the context shows none of the unread line.
         st.input.cur_input.limit = BufPos::ZERO;
     }
@@ -312,35 +316,36 @@ impl EqtbState {
 }
 
 impl Abort {
-    fn overflow_report(st: &mut EngineState, what: &str, n: i32) {
-        pre_error_message(st);
-        print(st, "TeX capacity exceeded, sorry [");
-        print(st, what);
-        print_char(st, b'=');
-        print_int(st, n);
-        print_char(st, b']');
+    fn overflow_report(st: &mut EngineState, env: &mut EngineEnv, what: &str, n: i32) {
+        pre_error_message(st, env);
+        print(st, env, "TeX capacity exceeded, sorry [");
+        print(st, env, what);
+        print_char(st, env, b'=');
+        print_int(st, env, n);
+        print_char(st, env, b']');
         st.errors.help(&[
             "If you really absolutely need more capacity,",
             "you can ask a wizard to enlarge me.",
         ]);
-        post_error_message(st, true);
+        post_error_message(st, env, true);
         set_error_message("halted on overflow()");
     }
 
-    fn fatal_report(st: &mut EngineState, s: &'static str) {
-        pre_error_message(st);
-        print(st, "Emergency stop");
+    fn fatal_report(st: &mut EngineState, env: &mut EngineEnv, s: &'static str) {
+        pre_error_message(st, env);
+        print(st, env, "Emergency stop");
         st.errors.help(&[s]);
         if let Some(diagnostic) = take_capture(st, st.errors.help_text()) {
-            emit_fatal(st, diagnostic);
+            emit_fatal(st, env, diagnostic);
         }
-        post_error_message(st, true);
+        post_error_message(st, env, true);
         set_error_message(s);
     }
 
-    fn file_error_report(st: &mut EngineState) {
+    fn file_error_report(st: &mut EngineState, env: &mut EngineEnv) {
         Self::fatal_report(
             st,
+            env,
             if st.errors.interaction < InteractionMode::Scroll {
                 "*** (job aborted, file error in nonstop mode)"
             } else {
@@ -357,74 +362,79 @@ impl Abort {
         set_error_message(msg);
     }
 
-    pub(crate) fn into_history(self, st: &mut EngineState) -> i32 {
+    pub(crate) fn into_history(self, st: &mut EngineState, env: &mut EngineEnv) -> i32 {
         match self {
             Abort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
             Abort::Horizoned => {
                 return Abort::Confusion("horizon stop escaped resident orchestration")
-                    .into_history(st);
+                    .into_history(st, env);
             }
-            Abort::Overflow { capacity, n } => Self::overflow_report(st, capacity.name(), n),
+            Abort::Overflow { capacity, n } => Self::overflow_report(st, env, capacity.name(), n),
             Abort::AvailOverflow => {
-                runaway(st);
-                Self::overflow_report(st, Capacity::MainMemory.name(), MAIN_MEMORY_WORDS);
+                runaway(st, env);
+                Self::overflow_report(st, env, Capacity::MainMemory.name(), MAIN_MEMORY_WORDS);
             }
             Abort::Confusion(s) => {
-                pre_error_message(st);
+                pre_error_message(st, env);
                 if st.errors.history < HISTORY_ERROR_ISSUED {
-                    print(st, "This can't happen (");
-                    print(st, s);
-                    print_char(st, b')');
+                    print(st, env, "This can't happen (");
+                    print(st, env, s);
+                    print_char(st, env, b')');
                     st.errors
                         .help(&["I'm broken. Please show this to someone who can fix can fix"]);
                 } else {
-                    print(st, "I can't go on meeting you like this");
+                    print(st, env, "I can't go on meeting you like this");
                     st.errors.help(&[
                         "One of your faux pas seems to have wounded me deeply...",
                         "in fact, I'm barely conscious. Please fix it and try again.",
                     ]);
                 }
-                post_error_message(st, true);
+                post_error_message(st, env, true);
                 set_error_message("halted on confusion()");
             }
-            Abort::Fatal(s) => Self::fatal_report(st, s),
+            Abort::Fatal(s) => Self::fatal_report(st, env, s),
             Abort::DumpInGroup => {
-                print_err(st, DiagnosticKind::Fatal, "You can't dump inside a group");
+                print_err(
+                    st,
+                    env,
+                    DiagnosticKind::Fatal,
+                    "You can't dump inside a group",
+                );
                 st.errors.help(&[r"`{...\dump}' is a no-no."]);
-                post_error_message(st, true);
+                post_error_message(st, env, true);
                 set_error_message("\\dump inside a group");
             }
             Abort::NoLegalEnd { open_log } => {
                 if open_log {
-                    let _ = open_log_file(st);
+                    let _ = open_log_file(st, env);
                 }
-                Self::fatal_report(st, "*** (job aborted, no legal \\end found)");
+                Self::fatal_report(st, env, "*** (job aborted, no legal \\end found)");
             }
             Abort::PdfError([t, p]) => {
-                pre_error_message(st);
-                print(st, "Error (");
-                print(st, *t);
-                print(st, "): ");
-                print(st, *p);
-                post_error_message(st, true);
+                pre_error_message(st, env);
+                print(st, env, "Error (");
+                print(st, env, *t);
+                print(st, env, "): ");
+                print(st, env, *p);
+                post_error_message(st, env, true);
                 set_error_message("halted on pdf_error()");
             }
             Abort::HaltOnError => {
-                post_error_message(st, false);
+                post_error_message(st, env, false);
                 set_error_message("halted on potentially-recoverable error as specified");
             }
             Abort::HundredErrors => {
-                post_error_message(st, false);
+                post_error_message(st, env, false);
                 set_error_message("halted after 100 potentially-recoverable errors");
             }
             Abort::Internal(msg) => set_error_message(msg),
             Abort::InputClose => set_error_message("serious internal error closing an input file"),
             Abort::CannotOpenInput { name } => {
-                Self::file_error_report(st);
+                Self::file_error_report(st, env);
                 Self::open_failure("failed to open input file", &name)
             }
             Abort::CannotOpenOutput { name } => {
-                Self::file_error_report(st);
+                Self::file_error_report(st, env);
                 Self::open_failure("cannot open output file", &name)
             }
         }
@@ -434,63 +444,76 @@ impl Abort {
 
 pub(crate) fn not_font_error_common(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     command: Command,
     f: FontId,
     suffix: &str,
 ) -> Result<(), Abort> {
     let font = st.fonts.font_name[f];
-    error(st, ("Cannot use ", command, " with ", font, suffix), &[])
+    error(
+        st,
+        env,
+        ("Cannot use ", command, " with ", font, suffix),
+        &[],
+    )
 }
 
-pub(crate) fn give_err_help(st: &mut EngineState) {
-    token_show(st, st.eqtb.tok_par(TokPar::ErrHelp));
+pub(crate) fn give_err_help(st: &mut EngineState, env: &mut EngineEnv) {
+    token_show(st, env, st.eqtb.tok_par(TokPar::ErrHelp));
 }
 
-fn report_error(st: &mut EngineState, message: impl TexPrint, help: &[&'static str]) {
-    print_err(st, DiagnosticKind::Error, message);
+fn report_error(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    message: impl TexPrint,
+    help: &[&'static str],
+) {
+    print_err(st, env, DiagnosticKind::Error, message);
     st.errors.help(help);
     if let Some(diagnostic) = take_capture(st, st.errors.help_text()) {
-        emit(st, diagnostic);
+        emit(st, env, diagnostic);
     }
 }
 
 pub(crate) fn error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    report_error(st, message, help);
-    finish_error(st)
+    report_error(st, env, message, help);
+    finish_error(st, env)
 }
 
 /// `\errmessage`: an error whose help is `\errhelp` when that is set, else `fallback`.
 /// `fallback` is unused when `\errhelp` is set.
 pub(crate) fn errmessage(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     message: StrNumber,
     fallback: &[&'static str],
 ) -> Result<(), Abort> {
     let err_help = st.eqtb.tok_par(TokPar::ErrHelp);
     if err_help.is_null() {
-        return error(st, message, fallback);
+        return error(st, env, message, fallback);
     }
-    let help = err_help_text(st, err_help);
-    print_err(st, DiagnosticKind::Error, message);
+    let help = err_help_text(st, env, err_help);
+    print_err(st, env, DiagnosticKind::Error, message);
     if let Some(diagnostic) = take_capture(st, help) {
-        emit(st, diagnostic);
+        emit(st, env, diagnostic);
     }
     st.errors.use_err_help = true;
-    finish_error(st)?;
+    finish_error(st, env)?;
     // An error that does not return leaves it set, so the fatal report shows `\errhelp` as in TeX.
     st.errors.use_err_help = false;
     Ok(())
 }
 
-fn err_help_text(st: &mut EngineState, list: TokenList) -> Vec<String> {
+fn err_help_text(st: &mut EngineState, env: &mut EngineEnv, list: TokenList) -> Vec<String> {
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     let start = st.strings.cur_string_start();
-    token_show(st, list);
+    token_show(st, env, list);
     st.shipout.selector = old_setting;
     let units: Vec<u16> = start
         .until(st.strings.pool_ptr)
@@ -505,37 +528,41 @@ fn err_help_text(st: &mut EngineState, list: TokenList) -> Vec<String> {
 
 pub(crate) fn back_error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    report_error(st, message, help);
+    report_error(st, env, message, help);
     back_input(st)?;
-    finish_error(st)
+    finish_error(st, env)
 }
 
 pub(crate) fn ins_error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    report_error(st, message, help);
+    report_error(st, env, message, help);
     back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::Inserted);
-    finish_error(st)
+    finish_error(st, env)
 }
 
-pub(crate) fn mu_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn mu_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         "Incompatible glue units",
         &["I'm going to assume that 1mu=1pt when they're mixed."],
     )
 }
 
-pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn extra_right_brace(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let closer = st.save_stack.cur_group.closer();
     error(
         st,
+        env,
         ("Extra }, or forgotten ", closer),
         &[
             "I've deleted a group-closing symbol because it seems to be",
@@ -557,9 +584,10 @@ pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint + use<> {
     )
 }
 
-pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn report_illegal_case(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         you_cant(st),
         &[
             "Sorry, but I'm not programmed to handle this case;",
@@ -570,17 +598,18 @@ pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
+pub(crate) fn privileged(st: &mut EngineState, env: &mut EngineEnv) -> Result<bool, Abort> {
     if st.input.cur_list.mode.is_outer() {
         return Ok(true);
     }
-    report_illegal_case(st)?;
+    report_illegal_case(st, env)?;
     Ok(false)
 }
 
-pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn cs_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         ("Extra ", Esc("endcsname")),
         &[r"I'm ignoring this, since I wasn't doing a \csname."],
     )
@@ -588,22 +617,23 @@ pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn box_error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     n: u8,
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
     let box_val = link_of(st.eqtb.box_reg(n));
-    error(st, message, help)?;
+    error(st, env, message, help)?;
     begin_diagnostic(st);
-    print_nl(st, "The following box has been deleted:");
-    show_box(st, box_val);
-    end_diagnostic(st, true);
+    print_nl(st, env, "The following box has been deleted:");
+    show_box(st, env, box_val);
+    end_diagnostic(st, env, true);
     st.mem.flush_node_list(box_val)?;
     st.eqtb.set_box_reg(n, None);
     Ok(())
 }
 
-pub(crate) fn runaway(st: &mut EngineState) {
+pub(crate) fn runaway(st: &mut EngineState, env: &mut EngineEnv) {
     let msg = match st.scanner.scanner_status {
         ScannerStatus::Defining => "Runaway definition",
         ScannerStatus::Matching => "Runaway argument",
@@ -611,12 +641,12 @@ pub(crate) fn runaway(st: &mut EngineState) {
         ScannerStatus::Absorbing => "Runaway text",
         _ => return,
     };
-    print_nl(st, msg);
-    print_char(st, b'?');
-    print_ln(st);
+    print_nl(st, env, msg);
+    print_char(st, env, b'?');
+    print_ln(st, env);
     let built = st.mem.tokens.innermost_built();
     let l = st.errors.error_line - 10;
-    show_tokens(st, &built, l);
+    show_tokens(st, env, &built, l);
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -688,4 +718,9 @@ impl Default for ErrorState {
             breadth_max: 0,
         }
     }
+}
+
+/// Surfaces `message` as the run's abort message. A message with a NUL is dropped.
+pub(crate) fn set_error_message(message: impl AsRef<[u8]>) {
+    texyon_bridge_core::set_abort_message(message.as_ref());
 }

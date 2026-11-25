@@ -14,17 +14,16 @@ use super::{FontEngineHandle, FontSize, OTGR_FONT_FLAG};
 use crate::base::codes::{ConvertCode, LastItemCode};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled};
-use crate::ffi::bridge::{FileFormat, input_get_size, input_open, input_read, with_bridge};
+use crate::env::EngineEnv;
 use crate::ffi::teckit_icu::{FontMappingHandle, hb_tag};
-use crate::files::io::{
-    AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE, icu_converter_exists, input_close,
-};
+use crate::files::io::{AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE, icu_converter_exists};
 use crate::print::errors::Abort;
 use crate::print::{
     begin_diagnostic, end_diagnostic, font_feature_warning, font_mapping_warning, print, print_nl,
     print_raw_bytes,
 };
 use crate::state::EngineState;
+use texyon_bridge_core::FileFormat;
 
 mod native;
 
@@ -145,6 +144,7 @@ fn read_rgb_a(s: &mut &[u8]) -> u32 {
 /// for `ICUMAPPING`.
 pub(crate) fn get_encoding_mode_and_info(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     bytes: &[u8],
 ) -> Result<(c_int, i32), Abort> {
     for (name, mode) in [
@@ -162,11 +162,11 @@ pub(crate) fn get_encoding_mode_and_info(
 
     if icu_converter_exists(bytes).is_err() {
         begin_diagnostic(st);
-        print_nl(st, b'U');
-        print(st, "nknown encoding `");
-        print(st, bytes);
-        print(st, "'; reading as raw bytes");
-        end_diagnostic(st, true);
+        print_nl(st, env, b'U');
+        print(st, env, "nknown encoding `");
+        print(st, env, bytes);
+        print(st, env, "'; reading as raw bytes");
+        end_diagnostic(st, env, true);
         Ok((RAW, 0))
     } else {
         let info = st.strings.make_tex_string(bytes)?;
@@ -238,6 +238,7 @@ fn read_feature_number(spec: &[u8]) -> Option<(u32, c_int)> {
 /// bytes for TFM fonts or to UTF-16 for native ones.
 pub(crate) fn load_mapping_file(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     name: &[u8],
     byte_mapping: bool,
     font_name: &[u8],
@@ -249,20 +250,18 @@ pub(crate) fn load_mapping_file(
         .unwrap_or(file_name.len());
     let name = &file_name[..name_len];
 
-    let map = input_open(name, FileFormat::MiscFonts, false);
-    if map == 0 {
-        font_mapping_warning(st, name, font_name, 1);
+    let Some(opened) = env.open_input(name, FileFormat::MiscFonts, false) else {
+        font_mapping_warning(st, env, name, font_name, 1);
         return Ok(None);
-    }
-
-    let mapping_size = input_get_size(map);
-    let mut mapping = vec![0u8; mapping_size];
-    if !input_read(map, &mut mapping) {
-        return Err(Abort::Internal("could not read mapping file"));
-    }
-    if input_close(map) {
+    };
+    let mut map = opened.source;
+    let mapping = map.read_to_end(env);
+    if map.close(env) {
         return Err(Abort::InputClose);
     }
+    let Some(mapping) = mapping else {
+        return Err(Abort::Internal("could not read mapping file"));
+    };
 
     let (map_forward, target_form) = if byte_mapping {
         (false, K_FORM_BYTES)
@@ -272,9 +271,9 @@ pub(crate) fn load_mapping_file(
     let (cnv, _) = FontMappingHandle::new(Some(&mapping), map_forward, UTF16_NATIVE, target_form);
 
     match &cnv {
-        None => font_mapping_warning(st, name, font_name, 2),
+        None => font_mapping_warning(st, env, name, font_name, 2),
         Some(_) if st.eqtb.int_par(IntPar::XetexTracingFonts) > 1 => {
-            font_mapping_warning(st, name, font_name, 0)
+            font_mapping_warning(st, env, name, font_name, 0)
         }
         Some(_) => {}
     }
@@ -309,6 +308,7 @@ struct CommonFeatures {
 
 fn read_common_feature(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     font_name: &[u8],
     feat: &[u8],
     start: usize,
@@ -321,7 +321,7 @@ fn read_common_feature(
             return Ok(Some(false));
         };
         st.fonts.loaded_font_mapping =
-            load_mapping_file(st, &feat[start + value..end], false, font_name)?;
+            load_mapping_file(st, env, &feat[start + value..end], false, font_name)?;
         return Ok(Some(true));
     }
 
@@ -360,6 +360,7 @@ fn read_common_feature(
 
 fn load_ot_font(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     mut font: Font,
     scaled_size: Scaled,
     feat: Option<&[u8]>,
@@ -430,7 +431,8 @@ fn load_ot_font(
                     shapers.push(&feat[cp1 + value..cp2]);
                     break 'option Some(true);
                 }
-                if let Some(valid) = read_common_feature(st, font_name, feat, cp1, cp2, &mut opts)?
+                if let Some(valid) =
+                    read_common_feature(st, env, font_name, feat, cp1, cp2, &mut opts)?
                 {
                     break 'option Some(valid);
                 }
@@ -474,7 +476,7 @@ fn load_ot_font(
             };
 
             if parsed != Some(true) {
-                font_feature_warning(st, spec, &[], font_name);
+                font_feature_warning(st, env, spec, &[], font_name);
             }
             cp1 = cp2;
         }
@@ -534,13 +536,22 @@ fn c_path(path: &[u8]) -> &str {
     }
 }
 
-fn font_from_file(path: &[u8], index: c_int, point_size: Scaled) -> Option<Font> {
+fn font_from_file(
+    env: &mut EngineEnv,
+    path: &[u8],
+    index: c_int,
+    point_size: Scaled,
+) -> Option<Font> {
     let path = c_path(path);
-    with_bridge(|io| Font::from_file(path, index as usize, point_size.raw(), io))
+    env.bridge_state(|io| Font::from_file(path, index as usize, point_size.raw(), io))
 }
 
-fn font_from_platform(font_ref: &PlatformFontRef, point_size: Scaled) -> Option<Font> {
-    with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
+fn font_from_platform(
+    env: &mut EngineEnv,
+    font_ref: &PlatformFontRef,
+    point_size: Scaled,
+) -> Option<Font> {
+    env.bridge_state(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
 }
 
 /// The point size to load at, `size` resolved against `font`'s design size.
@@ -561,6 +572,7 @@ fn point_size(font: Option<Font>, size: FontSize) -> Scaled {
 /// font's full name: `name` for a file, the installed font's name otherwise.
 pub(crate) fn find_native_font(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     name: &[u8],
     size: FontSize,
 ) -> Result<Option<(FontEngineHandle, Vec<u8>)>, Abort> {
@@ -579,11 +591,12 @@ pub(crate) fn find_native_font(
         let path = &name_string[1..];
         let scaled_size = match size {
             FontSize::At(s) => s,
-            FontSize::Scaled(_) => {
-                point_size(font_from_file(path, split.index, Scaled::UNITY * 10), size)
-            }
+            FontSize::Scaled(_) => point_size(
+                font_from_file(env, path, split.index, Scaled::UNITY * 10),
+                size,
+            ),
         };
-        if let Some(font) = font_from_file(path, split.index, scaled_size) {
+        if let Some(font) = font_from_file(env, path, split.index, scaled_size) {
             set_loaded_font_design_size(d2fix(font.design_size()));
             let found = font.found_name().to_vec();
 
@@ -598,18 +611,18 @@ pub(crate) fn find_native_font(
                 }
             }
 
-            rval = load_ot_font(st, font, scaled_size, feat_string.as_deref(), name)?
+            rval = load_ot_font(st, env, font, scaled_size, feat_string.as_deref(), name)?
                 .map(|engine| (engine, name.to_vec()));
             if rval.is_some() && st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 begin_diagnostic(st);
-                print_nl(st, b' ');
-                print_raw_bytes(st, b"-> ");
-                print_raw_bytes(st, &found);
-                end_diagnostic(st, false);
+                print_nl(st, env, b' ');
+                print_raw_bytes(st, env, b"-> ");
+                print_raw_bytes(st, env, &found);
+                end_diagnostic(st, env, false);
             }
         }
     } else {
-        let found = with_bridge(|io| {
+        let found = env.bridge_state(|io| {
             FontManager::with_font_manager(|mgr| {
                 mgr.find_font(name_string, var_string.as_mut(), fix2d(size.raw()), io)
             })
@@ -617,13 +630,13 @@ pub(crate) fn find_native_font(
         if let Some(font_ref) = found {
             if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 begin_diagnostic(st);
-                print_nl(st, b' ');
-                print_raw_bytes(st, b"-> ");
+                print_nl(st, env, b' ');
+                print_raw_bytes(st, env, b"-> ");
                 let desc = FontManager::with_font_manager(|mgr| {
                     mgr.get_platform_font_desc(&font_ref).to_bytes().to_vec()
                 });
-                print_raw_bytes(st, &desc);
-                end_diagnostic(st, false);
+                print_raw_bytes(st, env, &desc);
+                end_diagnostic(st, env, false);
             }
 
             let mut full_name = FontManager::with_font_manager(|mgr| {
@@ -632,12 +645,21 @@ pub(crate) fn find_native_font(
 
             let scaled_size = match size {
                 FontSize::At(s) => s,
-                FontSize::Scaled(_) => point_size(font_from_platform(&font_ref, size.raw()), size),
+                FontSize::Scaled(_) => {
+                    point_size(font_from_platform(env, &font_ref, size.raw()), size)
+                }
             };
 
             let mut engine = None;
-            if let Some(font) = font_from_platform(&font_ref, scaled_size) {
-                engine = load_ot_font(st, font, scaled_size, feat_string.as_deref(), &full_name)?;
+            if let Some(font) = font_from_platform(env, &font_ref, scaled_size) {
+                engine = load_ot_font(
+                    st,
+                    env,
+                    font,
+                    scaled_size,
+                    feat_string.as_deref(),
+                    &full_name,
+                )?;
             }
 
             if let Some(var) = var_string.as_deref().filter(|v| !v.is_empty()) {
@@ -820,6 +842,7 @@ pub(crate) fn ot_font_get_3(
 
 pub(crate) fn gr_print_font_name(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     what: ConvertCode,
     engine: &FontEngineHandle,
     param1: i32,
@@ -833,7 +856,7 @@ pub(crate) fn gr_print_font_name(
         _ => None,
     };
     if let Some(name) = name {
-        print(st, name.as_slice());
+        print(st, env, name.as_slice());
     }
 }
 
@@ -884,12 +907,17 @@ pub fn aat_font_get_named_1(_what: LastItemCode, _param: c_int) -> c_int {
     -1
 }
 
-pub(crate) fn print_glyph_name(st: &mut EngineState, font: FontId, gid: i32) -> Result<(), Abort> {
+pub(crate) fn print_glyph_name(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    font: FontId,
+    gid: i32,
+) -> Result<(), Abort> {
     let engine = st
         .fonts
         .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
     let name = engine.font().glyph_name(gid as u16).unwrap_or_default();
-    print(st, name.as_bytes());
+    print(st, env, name.as_bytes());
     Ok(())
 }
 

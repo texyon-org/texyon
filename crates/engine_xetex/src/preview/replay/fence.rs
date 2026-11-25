@@ -1,11 +1,11 @@
 //! Strong source constraints carried by resumable command fences.
 
 use std::mem::size_of;
-use std::ptr;
 
-use super::adapter::{self, MemoryInput};
+use super::adapter::{self, MemoryInput, SnapshotSources};
 use super::source::{SourceRevision, SourceSnapshot, first_difference};
-use crate::files::io::UFile;
+use crate::env::EngineEnv;
+use crate::files::input_file::{InputFile, InputFileCheckpoint};
 use crate::scanning::input::InputSlot;
 use crate::state::EngineState;
 
@@ -16,10 +16,7 @@ enum InputSlotCheckpoint {
     },
     Open {
         slot: usize,
-        handle: usize,
-        saved_char: i64,
-        skip_next_lf: i16,
-        encoding_mode: i16,
+        file: InputFileCheckpoint,
     },
 }
 
@@ -34,6 +31,7 @@ pub(crate) struct ReplayFence {
 impl ReplayFence {
     pub(crate) fn capture(
         state: &EngineState,
+        sources: &SnapshotSources,
         snapshot: &SourceSnapshot,
         resume_pending_command: bool,
     ) -> Option<Self> {
@@ -51,25 +49,21 @@ impl ReplayFence {
         }) {
             return None;
         }
-        let inputs = ReplayFenceInputs::capture(snapshot)?;
+        let inputs = ReplayFenceInputs {
+            revision: snapshot.revision(),
+            inputs: sources.checkpoint(),
+        };
         let mut slots = Vec::new();
         for (slot, input) in state.input.input_file.iter().enumerate() {
             match input {
                 InputSlot::Empty => {}
                 InputSlot::Terminal => slots.push(InputSlotCheckpoint::Terminal { slot }),
                 InputSlot::Open(file) => {
-                    if !file.conversion_data.is_null()
-                        || !adapter::checkpoint_handle_is_open(&inputs.inputs, file.handle)
-                    {
+                    let file = file.checkpoint()?;
+                    if !adapter::checkpoint_input_is_open(&inputs.inputs, file.id) {
                         return None;
                     }
-                    slots.push(InputSlotCheckpoint::Open {
-                        slot,
-                        handle: file.handle,
-                        saved_char: file.saved_char,
-                        skip_next_lf: file.skip_next_lf,
-                        encoding_mode: file.encoding_mode,
-                    });
+                    slots.push(InputSlotCheckpoint::Open { slot, file });
                 }
             }
         }
@@ -85,30 +79,22 @@ impl ReplayFence {
         self.inputs.revision <= snapshot.revision() && self.inputs.is_eligible(snapshot)
     }
 
-    pub(crate) fn restore_inputs(&self, state: &mut EngineState) -> bool {
-        if !adapter::restore_inputs(&self.inputs.inputs) {
+    pub(crate) fn restore_inputs(&self, state: &mut EngineState, env: &mut EngineEnv) -> bool {
+        if !env
+            .sources()
+            .is_some_and(|sources| sources.restore(&self.inputs.inputs))
+        {
             return false;
         }
         state.input.input_file.fill_with(|| InputSlot::Empty);
         for checkpoint in &self.slots {
-            match *checkpoint {
+            match checkpoint {
                 InputSlotCheckpoint::Terminal { slot } => {
-                    state.input.input_file[slot] = InputSlot::Terminal;
+                    state.input.input_file[*slot] = InputSlot::Terminal;
                 }
-                InputSlotCheckpoint::Open {
-                    slot,
-                    handle,
-                    saved_char,
-                    skip_next_lf,
-                    encoding_mode,
-                } => {
-                    state.input.input_file[slot] = InputSlot::Open(Box::new(UFile {
-                        handle,
-                        saved_char,
-                        skip_next_lf,
-                        encoding_mode,
-                        conversion_data: ptr::null_mut(),
-                    }));
+                InputSlotCheckpoint::Open { slot, file } => {
+                    state.input.input_file[*slot] =
+                        InputSlot::Open(Box::new(InputFile::restore(file)));
                 }
             }
         }
@@ -136,13 +122,6 @@ struct ReplayFenceInputs {
 }
 
 impl ReplayFenceInputs {
-    fn capture(snapshot: &SourceSnapshot) -> Option<Self> {
-        Some(Self {
-            revision: snapshot.revision(),
-            inputs: adapter::checkpoint_inputs()?,
-        })
-    }
-
     /// Whether all consumed source constraints remain sound in `snapshot`.
     ///
     /// A source may change at or beyond its `seen` watermark, which the engine
@@ -173,12 +152,18 @@ impl ReplayFenceInputs {
 
 #[cfg(test)]
 mod tests {
+    use crate::env::test_env;
     use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::sync::Arc;
 
     use super::*;
-    use crate::ffi::bridge::FileFormat;
+    use crate::base::units::BufPos;
+    use crate::files::input_file::{Decoder, Encoding, InputSource};
+    use crate::files::io::input_line;
+    use crate::preview::replay::adapter::MemoryInputId;
+    use crate::scanning::input::InputBuffer;
+    use texyon_bridge_core::FileFormat;
 
     fn snapshot(revision: u64, primary: &[u8], child: &[u8]) -> SourceSnapshot {
         SourceSnapshot::new_with_revision(
@@ -217,7 +202,6 @@ mod tests {
             bytes,
             identity,
             position,
-            pushback: None,
             seen: position,
             closed,
         }
@@ -316,87 +300,136 @@ mod tests {
         assert!(!fence.is_eligible(&snapshot(2, b"PREFIX late text", b"child")));
     }
 
+    fn reader(id: MemoryInputId) -> InputFile {
+        let mut file = InputFile::new(InputSource::Memory(id));
+        file.decoder = Decoder::Plain(Encoding::Utf8);
+        file
+    }
+
+    fn line_state(slots: usize) -> EngineState {
+        let mut state = EngineState::default();
+        state.input.input_file.resize_with(slots, Default::default);
+        state.input.buffer = InputBuffer(vec![0; 64]);
+        state.input.buf_size = BufPos::from_raw(63);
+        state
+    }
+
+    fn line(state: &EngineState) -> Vec<i32> {
+        state.input.buffer.0[state.input.first.index()..state.input.last.index()].to_vec()
+    }
+
+    fn chars(text: &str) -> Vec<i32> {
+        text.bytes().map(i32::from).collect()
+    }
+
     #[test]
-    fn complete_fence_recreates_open_ufile_state() {
+    fn complete_fence_recreates_open_input_state() {
+        let env = &mut test_env();
         let original = snapshot(1, b"abcdef", b"child");
-        let mut written = BTreeSet::new();
         let fence = {
-            let _guard = adapter::install(original.clone(), &mut written);
-            let handle = adapter::open_primary().unwrap();
-            assert_eq!(adapter::getc(handle), Some(b'a'.into()));
-            assert_eq!(adapter::getc(handle), Some(b'b'.into()));
+            env.install_sources(original.clone(), BTreeSet::new());
+            let mut file = reader(env.sources().unwrap().open_primary());
+            assert_eq!(file.getc(env), i32::from(b'a'));
+            assert_eq!(file.getc(env), i32::from(b'b'));
+            file.pending_lf = true;
+            file.sync(env);
             let mut state = EngineState::default();
             state.input.input_file.resize_with(2, Default::default);
-            state.input.input_file[1] = InputSlot::Open(Box::new(UFile {
-                handle,
-                saved_char: -1,
-                skip_next_lf: 1,
-                encoding_mode: 1,
-                conversion_data: ptr::null_mut(),
-            }));
-            ReplayFence::capture(&state, &original, true).unwrap()
+            state.input.input_file[1] = InputSlot::Open(Box::new(file));
+            ReplayFence::capture(&state, env.sources().unwrap(), &original, true).unwrap()
         };
         let edited = snapshot(2, b"abcdEF", b"child");
         assert!(fence.is_eligible(&edited));
-        let _guard = adapter::install(edited, &mut written);
+        env.install_sources(edited, BTreeSet::new());
         let mut state = EngineState::default();
         state.input.input_file.resize_with(2, Default::default);
-        assert!(fence.restore_inputs(&mut state));
-        let InputSlot::Open(file) = &state.input.input_file[1] else {
+        assert!(fence.restore_inputs(&mut state, env));
+        let InputSlot::Open(file) = &mut state.input.input_file[1] else {
             panic!("input slot was not restored")
         };
-        assert_eq!(file.skip_next_lf, 1);
-        assert_eq!(adapter::getc(file.handle), Some(b'c'.into()));
+        assert!(file.pending_lf);
+        assert_eq!(file.getc(env), i32::from(b'c'));
         assert!(fence.resume_pending_command());
     }
 
     #[test]
     fn complete_fence_recreates_a_deep_open_input_stack() {
+        let env = &mut test_env();
         let original = nested_snapshot(1, b"EFgh");
-        let mut written = BTreeSet::new();
         let fence = {
-            let _guard = adapter::install(original.clone(), &mut written);
-            let main = adapter::open_primary().unwrap();
-            let chapter = adapter::open_named("chapter", FileFormat::Tex).unwrap();
-            let leaf = adapter::open_named("parts/leaf", FileFormat::Tex).unwrap();
-            assert_eq!(adapter::getc(main), Some(b'A'.into()));
-            assert_eq!(adapter::getc(chapter), Some(b'C'.into()));
-            assert_eq!(adapter::getc(leaf), Some(b'E'.into()));
-            assert_eq!(adapter::getc(leaf), Some(b'F'.into()));
+            env.install_sources(original.clone(), BTreeSet::new());
+            let mut main = reader(env.sources().unwrap().open_primary());
+            let mut chapter = reader(
+                env.sources()
+                    .unwrap()
+                    .open_named("chapter", FileFormat::Tex)
+                    .unwrap(),
+            );
+            let mut leaf = reader(
+                env.sources()
+                    .unwrap()
+                    .open_named("parts/leaf", FileFormat::Tex)
+                    .unwrap(),
+            );
+            assert_eq!(main.getc(env), i32::from(b'A'));
+            assert_eq!(chapter.getc(env), i32::from(b'C'));
+            assert_eq!(leaf.getc(env), i32::from(b'E'));
+            assert_eq!(leaf.getc(env), i32::from(b'F'));
 
             let mut state = EngineState::default();
             state.input.input_file.resize_with(4, Default::default);
-            for (slot, handle) in [main, chapter, leaf].into_iter().enumerate() {
-                state.input.input_file[slot + 1] = InputSlot::Open(Box::new(UFile {
-                    handle,
-                    saved_char: -1,
-                    skip_next_lf: slot as i16,
-                    encoding_mode: 1,
-                    conversion_data: ptr::null_mut(),
-                }));
+            for (slot, mut file) in [main, chapter, leaf].into_iter().enumerate() {
+                file.sync(env);
+                state.input.input_file[slot + 1] = InputSlot::Open(Box::new(file));
             }
-            ReplayFence::capture(&state, &original, true).unwrap()
+            ReplayFence::capture(&state, env.sources().unwrap(), &original, true).unwrap()
         };
 
         let edited = nested_snapshot(2, b"EFGH");
         assert!(fence.is_eligible(&edited));
-        let _guard = adapter::install(edited, &mut written);
+        env.install_sources(edited, BTreeSet::new());
         let mut restored = EngineState::default();
         restored.input.input_file.resize_with(4, Default::default);
-        assert!(fence.restore_inputs(&mut restored));
+        assert!(fence.restore_inputs(&mut restored, env));
 
-        let handles = restored
+        let next = restored
             .input
             .input_file
-            .iter()
+            .iter_mut()
             .skip(1)
             .map(|slot| match slot {
-                InputSlot::Open(file) => file.handle,
+                InputSlot::Open(file) => file.getc(env),
                 _ => panic!("nested input slot was not restored"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(adapter::getc(handles[0]), Some(b'B'.into()));
-        assert_eq!(adapter::getc(handles[1]), Some(b'D'.into()));
-        assert_eq!(adapter::getc(handles[2]), Some(b'G'.into()));
+        assert_eq!(next, chars("BDG"));
+    }
+
+    #[test]
+    fn a_line_read_fences_exactly_the_line_and_its_terminator() {
+        let env = &mut test_env();
+        let original = snapshot(1, b"ab\r\ncd\n", b"child");
+        let fence = {
+            env.install_sources(original.clone(), BTreeSet::new());
+            let mut state = line_state(2);
+            let mut file = reader(env.sources().unwrap().open_primary());
+            assert!(input_line(&mut state, env, &mut file).unwrap());
+            assert_eq!(line(&state), chars("ab"));
+            state.input.input_file[1] = InputSlot::Open(Box::new(file));
+            ReplayFence::capture(&state, env.sources().unwrap(), &original, true).unwrap()
+        };
+
+        // The CR ended the line, the LF after it is still unread.
+        assert!(!fence.is_eligible(&snapshot(2, b"aX\r\ncd\n", b"child")));
+        assert!(fence.is_eligible(&snapshot(2, b"ab\rXcd\n", b"child")));
+
+        env.install_sources(snapshot(2, b"ab\rXcd\n", b"child"), BTreeSet::new());
+        let mut state = line_state(2);
+        assert!(fence.restore_inputs(&mut state, env));
+        let InputSlot::Open(mut file) = std::mem::take(&mut state.input.input_file[1]) else {
+            panic!("input slot was not restored")
+        };
+        assert!(input_line(&mut state, env, &mut file).unwrap());
+        assert_eq!(line(&state), chars("Xcd"));
     }
 }

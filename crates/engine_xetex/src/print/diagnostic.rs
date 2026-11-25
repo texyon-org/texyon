@@ -4,9 +4,9 @@
 use std::mem;
 
 use crate::base::units::StrNumber;
-use crate::ffi::bridge;
-use crate::ffi::bridge::{diag_append, diag_finish};
+use crate::env::EngineEnv;
 use crate::state::{EngineExecutionMode, EngineState};
+use texyon_bridge_core::Diagnostic as HostDiagnostic;
 
 /// What a diagnostic reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,8 +106,8 @@ pub(crate) fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     Some((st.input.open_levels[level].full_source_name, line))
 }
 
-pub(crate) fn begin_capture(st: &mut EngineState, kind: DiagnosticKind) {
-    end_capture(st);
+pub(crate) fn begin_capture(st: &mut EngineState, env: &mut EngineEnv, kind: DiagnosticKind) {
+    end_capture(st, env);
     let (file, line) = match current_file_line(st) {
         Some((name, line)) => {
             let name = st.strings.texstring_bytes(name);
@@ -126,16 +126,16 @@ pub(crate) fn begin_capture(st: &mut EngineState, kind: DiagnosticKind) {
     });
 }
 
-pub(crate) fn begin_warning(st: &mut EngineState) {
-    begin_capture(st, DiagnosticKind::Warning);
+pub(crate) fn begin_warning(st: &mut EngineState, env: &mut EngineEnv) {
+    begin_capture(st, env, DiagnosticKind::Warning);
 }
 
-pub(crate) fn warn_host(st: &mut EngineState, message: &str) {
-    begin_warning(st);
+pub(crate) fn warn_host(st: &mut EngineState, env: &mut EngineEnv, message: &str) {
+    begin_warning(st, env);
     if let Some(capture) = &mut st.diagnostics.capture {
         capture.text.extend_from_slice(message.as_bytes());
     }
-    end_capture(st);
+    end_capture(st, env);
 }
 
 pub(crate) fn take_capture(st: &mut EngineState, help: Vec<String>) -> Option<Diagnostic> {
@@ -145,32 +145,37 @@ pub(crate) fn take_capture(st: &mut EngineState, help: Vec<String>) -> Option<Di
         .map(|capture| capture.into_diagnostic(help))
 }
 
-pub(crate) fn end_capture(st: &mut EngineState) {
+pub(crate) fn end_capture(st: &mut EngineState, env: &mut EngineEnv) {
     if let Some(diagnostic) = take_capture(st, Vec::new()) {
-        emit(st, diagnostic);
+        emit(st, env, diagnostic);
     }
 }
 
-pub(crate) fn emit(st: &mut EngineState, diagnostic: Diagnostic) {
+pub(crate) fn emit(st: &mut EngineState, env: &mut EngineEnv, diagnostic: Diagnostic) {
     let cli = cli_text(&diagnostic, false);
-    emit_with_cli_text(st, diagnostic, cli);
+    emit_with_cli_text(st, env, diagnostic, cli);
 }
 
 /// Reports a fatal stop, whose reason the command line shows below it.
-pub(crate) fn emit_fatal(st: &mut EngineState, diagnostic: Diagnostic) {
+pub(crate) fn emit_fatal(st: &mut EngineState, env: &mut EngineEnv, diagnostic: Diagnostic) {
     let cli = cli_text(&diagnostic, true);
-    emit_with_cli_text(st, diagnostic, cli);
+    emit_with_cli_text(st, env, diagnostic, cli);
 }
 
-fn emit_with_cli_text(st: &mut EngineState, diagnostic: Diagnostic, cli: String) {
+fn emit_with_cli_text(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    diagnostic: Diagnostic,
+    cli: String,
+) {
     let bridged = match diagnostic.kind {
-        DiagnosticKind::Fatal | DiagnosticKind::Error => Some(bridge::Diagnostic::error()),
-        DiagnosticKind::Warning => Some(bridge::Diagnostic::warning()),
+        DiagnosticKind::Fatal | DiagnosticKind::Error => Some(HostDiagnostic::error()),
+        DiagnosticKind::Warning => Some(HostDiagnostic::warning()),
         DiagnosticKind::Written => None,
     };
     if let Some(mut bridged) = bridged {
         diag_append(&mut bridged, &cli);
-        diag_finish(bridged);
+        env.report(bridged);
     }
     st.shipout.diagnostics_issued += 1;
     if st.config.execution_mode == EngineExecutionMode::Resident {
@@ -192,4 +197,11 @@ fn cli_text(diagnostic: &Diagnostic, with_help: bool) -> String {
         }
     }
     text
+}
+
+/// Appends `text` to `diag`. A text with a NUL appends nothing.
+fn diag_append(diag: &mut HostDiagnostic, text: &str) {
+    if !text.contains('\0') {
+        diag.append(text);
+    }
 }

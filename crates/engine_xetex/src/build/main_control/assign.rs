@@ -13,6 +13,7 @@ use crate::base::scaled_math::{mult_and_add, x_over_n};
 use crate::base::token::{Token, TokenList};
 use crate::base::units::{FontId, GlueOrder, Scaled, StrNumber};
 use crate::build::hyphenation::{new_hyph_exceptions, new_patterns};
+use crate::env::EngineEnv;
 use crate::files::io::{open_log_file, scan_file_name};
 use crate::fonts::{FontSize, Side, read_font_info};
 use crate::memory::glue_store::GlueSpecId;
@@ -37,8 +38,8 @@ use crate::tables::eqtb::{
     LcLoc, MathLoc, SfLoc, ShapeLoc, ShapeRef, ToksLoc, UcLoc, XetexCode,
 };
 
-fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
-    print_ln(st);
+fn new_interaction(st: &mut EngineState, env: &mut EngineEnv, mode: InteractionMode) {
+    print_ln(st, env);
     st.errors.interaction = mode;
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         Selector::NoPrint
@@ -50,19 +51,20 @@ fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
     }
 }
 
-fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
+fn alter_aux(st: &mut EngineState, env: &mut EngineEnv, code: AuxCode) -> Result<(), Abort> {
     if st.input.cur_list.mode.kind() != Some(code.kind()) {
-        return report_illegal_case(st);
+        return report_illegal_case(st, env);
     }
-    scan_optional_equals(st)?;
+    scan_optional_equals(st, env)?;
     if code == AuxCode::PrevDepth {
-        let d = scan_dimen(st, false)?;
+        let d = scan_dimen(st, env, false)?;
         return st.input.cur_list.set_prev_depth(d);
     }
-    let n = scan_int(st)?;
+    let n = scan_int(st, env)?;
     if n <= 0 || n > 32767 {
         return error(
             st,
+            env,
             ("Bad space factor", " (", n, ")"),
             &["I allow only values in the range 1..32767 here."],
         );
@@ -70,18 +72,19 @@ fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
     st.input.cur_list.set_space_factor(n)
 }
 
-fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
+fn alter_prev_graf(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let np = st.input.nest.len();
     st.input.nest[np] = st.input.cur_list;
     let mut p = np;
     while !st.input.nest[p].mode.is_vertical() {
         p -= 1;
     }
-    scan_optional_equals(st)?;
-    let n = scan_int(st)?;
+    scan_optional_equals(st, env)?;
+    let n = scan_int(st, env)?;
     if n < 0 {
         return error(
             st,
+            env,
             ("Bad ", Esc("prevgraf"), " (", n, ")"),
             &["I allow only nonnegative values here."],
         );
@@ -91,22 +94,31 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn alter_page_so_far(st: &mut EngineState, code: PageDimenCode) -> Result<(), Abort> {
-    scan_optional_equals(st)?;
-    let d = scan_dimen(st, false)?;
+fn alter_page_so_far(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: PageDimenCode,
+) -> Result<(), Abort> {
+    scan_optional_equals(st, env)?;
+    let d = scan_dimen(st, env, false)?;
     st.shipout.page_so_far[code.index()] = d;
     Ok(())
 }
 
-fn alter_integer(st: &mut EngineState, code: PageIntCode) -> Result<(), Abort> {
-    scan_optional_equals(st)?;
-    let n = scan_int(st)?;
+fn alter_integer(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: PageIntCode,
+) -> Result<(), Abort> {
+    scan_optional_equals(st, env)?;
+    let n = scan_int(st, env)?;
     match code {
         PageIntCode::DeadCycles => st.shipout.dead_cycles = n,
         PageIntCode::InteractionMode => {
             let Some(mode) = InteractionMode::from_raw(n) else {
                 return error(
                     st,
+                    env,
                     ("Bad interaction mode", " (", n, ")"),
                     &[
                         "Modes are 0=batch, 1=nonstop, 2=scroll, and",
@@ -114,18 +126,22 @@ fn alter_integer(st: &mut EngineState, code: PageIntCode) -> Result<(), Abort> {
                     ],
                 );
             };
-            new_interaction(st, mode);
+            new_interaction(st, env, mode);
         }
         PageIntCode::InsertPenalties => st.shipout.insert_penalties = n,
     }
     Ok(())
 }
 
-fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort> {
-    let n = scan_register_num(st)?;
+fn alter_box_dimen(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: BoxDimenCode,
+) -> Result<(), Abort> {
+    let n = scan_register_num(st, env)?;
     let b = fetch_box(st, n);
-    scan_optional_equals(st)?;
-    let d = scan_dimen(st, false)?;
+    scan_optional_equals(st, env)?;
+    let d = scan_dimen(st, env, false)?;
     if let Some(b) = b {
         let v = d;
         match code {
@@ -152,19 +168,19 @@ fn trap_zero_glue(st: &mut EngineState, spec: GlueSpecId) -> GlueSpecId {
     }
 }
 
-fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
+fn new_font(st: &mut EngineState, env: &mut EngineEnv, a: i16) -> Result<(), Abort> {
     if st.strings.job_name == StrNumber::NONE {
-        open_log_file(st)?;
+        open_log_file(st, env)?;
     }
-    let u = get_r_token(st)?;
+    let u = get_r_token(st, env)?;
     let t = match u.kind() {
         CsKind::Null => st.strings.make_tex_string("FONT")?,
         CsKind::Single(c) => StrNumber::single_char(i32::from(c)),
         CsKind::Active(c) => {
             let old_setting = st.shipout.selector;
             st.shipout.selector = Selector::NewString;
-            print(st, "FONT");
-            print(st, StrNumber::single_char(c.raw()));
+            print(st, env, "FONT");
+            print(st, env, StrNumber::single_char(c.raw()));
             st.shipout.selector = old_setting;
             if st.strings.pool_ptr + 1 > st.strings.pool_size {
                 return Err(st.strings.pool_overflow());
@@ -176,15 +192,16 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 
     let global = a >= 4;
     eqtb::define(st, global, u, Command::SetFont(NULL_FONT))?;
-    scan_optional_equals(st)?;
-    let scanned = scan_file_name(st)?;
+    scan_optional_equals(st, env)?;
+    let scanned = scan_file_name(st, env)?;
     let file = scanned.file;
     st.scanner.name_in_progress = true;
-    let s = if scan_keyword(st, "at")? {
-        let size = scan_dimen(st, false)?;
+    let s = if scan_keyword(st, env, "at")? {
+        let size = scan_dimen(st, env, false)?;
         if size <= Scaled::ZERO || size >= Scaled::from_raw(0x800_0000) {
             error(
                 st,
+                env,
                 ("Improper `at' size (", size, "pt), replaced by 10pt"),
                 &[
                     "I can only handle fonts at positive sizes that are",
@@ -195,11 +212,12 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         } else {
             FontSize::At(size)
         }
-    } else if scan_keyword(st, "scaled")? {
-        let mag = scan_int(st)?;
+    } else if scan_keyword(st, env, "scaled")? {
+        let mag = scan_int(st, env)?;
         if mag <= 0 || mag > 32768 {
             error(
                 st,
+                env,
                 (
                     "Illegal magnification has been changed to 1000",
                     " (",
@@ -247,7 +265,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 break 'search f;
             }
         }
-        read_font_info(st, u, &scanned, s)?
+        read_font_info(st, env, u, &scanned, s)?
     };
 
     eqtb::define(st, global, u, Command::SetFont(f))?;
@@ -257,12 +275,12 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     Ok(())
 }
 
-fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
+fn do_register_command(st: &mut EngineState, env: &mut EngineEnv, a: i16) -> Result<(), Abort> {
     let op = st.scanner.cur;
     let q = op.cmd();
     let (l, p) = 'found: {
         if q != Cmd::Register {
-            get_x_token(st)?;
+            get_x_token(st, env)?;
             match st.scanner.cur {
                 Command::AssignInt(loc) => break 'found (RegisterLoc::Int(loc), ValueLevel::Int),
                 Command::AssignDimen(loc) => {
@@ -279,6 +297,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             if st.scanner.cur.cmd() != Cmd::Register {
                 return error(
                     st,
+                    env,
                     ("You can't use `", st.scanner.cur, "' after ", op),
                     &["I'm forgetting what you said and not changing anything."],
                 );
@@ -287,7 +306,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let Command::Register(p) = st.scanner.cur else {
             return Err(Abort::Confusion("register"));
         };
-        let r = scan_register_num(st)?;
+        let r = scan_register_num(st, env)?;
         let l = match p {
             ValueLevel::Int => RegisterLoc::Int(IntLoc::count(r)),
             ValueLevel::Dimen => RegisterLoc::Dimen(DimenLoc::dimen(r)),
@@ -306,18 +325,18 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     if q == Cmd::Register {
-        scan_optional_equals(st)?;
+        scan_optional_equals(st, env)?;
     } else {
-        scan_keyword(st, "by")?;
+        scan_keyword(st, env, "by")?;
     }
     let mut overflowed = false;
 
     let value = if q < Cmd::Multiply {
         if p < ValueLevel::Glue {
             let v = if p == ValueLevel::Int {
-                scan_int(st)?
+                scan_int(st, env)?
             } else {
-                scan_dimen(st, false)?.raw()
+                scan_dimen(st, env, false)?.raw()
             };
             RegisterValue::Word(if q == Cmd::Advance {
                 v.wrapping_add(w)
@@ -325,7 +344,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 v
             })
         } else {
-            let g = scan_glue(st, p)?;
+            let g = scan_glue(st, env, p)?;
             if q == Cmd::Advance {
                 let sum = st.mem.new_spec(g)?;
                 st.mem.delete_glue_ref(g);
@@ -364,7 +383,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             }
         }
     } else {
-        let n = scan_int(st)?;
+        let n = scan_int(st, env)?;
         let mut scale = |x: i32, max_answer: i32| {
             if q == Cmd::Multiply {
                 mult_and_add(x, n, 0, max_answer).track(&mut overflowed)
@@ -402,6 +421,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         }
         return error(
             st,
+            env,
             "Arithmetic overflow",
             &[
                 "I can't carry out that multiplication or division,",
@@ -434,21 +454,24 @@ enum RegisterValue {
     Glue(GlueSpecId),
 }
 
-pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn do_assignments(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
-        get_x_non_blank_non_relax(st)?;
+        get_x_non_blank_non_relax(st, env)?;
         if !st.scanner.cur.cmd().is_prefixed() {
             return Ok(());
         }
         st.scanner.set_box_allowed = false;
-        prefixed_command(st)?;
+        prefixed_command(st, env)?;
         st.scanner.set_box_allowed = true;
     }
 }
 
-pub(crate) fn scan_inter_char_pair(st: &mut EngineState) -> Result<InterCharPair, Abort> {
-    let first = scan_char_class_not_ignored(st)?;
-    let second = scan_char_class_not_ignored(st)?;
+pub(crate) fn scan_inter_char_pair(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<InterCharPair, Abort> {
+    let first = scan_char_class_not_ignored(st, env)?;
+    let second = scan_char_class_not_ignored(st, env)?;
     InterCharPair::new(first, second).or_confusion("char class")
 }
 
@@ -474,22 +497,23 @@ fn define_toks(
     }
 }
 
-pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn prefixed_command(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let mut a: i32 = 0;
     while let Command::Prefix(code) = st.scanner.cur {
         if (a / code.raw()) & 1 == 0 {
             a += code.raw();
         }
-        get_x_non_blank_non_relax(st)?;
+        get_x_non_blank_non_relax(st, env)?;
         if !st.scanner.cur.cmd().is_prefixed() {
             return back_error(
                 st,
+                env,
                 ("You can't use a prefix with `", st.scanner.cur, '\''),
                 &[r"I'll pretend you didn't say \long or \outer or \global or \protected."],
             );
         }
         if st.eqtb.int_par(IntPar::TracingCommands) > 2 {
-            show_cur_cmd_chr(st);
+            show_cur_cmd_chr(st, env);
         }
     }
 
@@ -500,6 +524,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur.cmd() != Cmd::Def && (a % 4 != 0 || protected) {
         error(
             st,
+            env,
             (
                 "You can't use `",
                 Esc("long"),
@@ -527,8 +552,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             if global && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
             }
-            let p = get_r_token(st)?;
-            scan_toks(st, true, expand)?;
+            let p = get_r_token(st, env)?;
+            scan_toks(st, env, true, expand)?;
             if protected {
                 st.mem
                     .tokens
@@ -538,24 +563,24 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             eqtb::define(st, a >= 4, p, m)?;
         }
         Command::Let { future } => {
-            let p = get_r_token(st)?;
+            let p = get_r_token(st, env)?;
             if !future {
                 loop {
-                    get_token(st)?;
+                    get_token(st, env)?;
                     if st.scanner.cur.cmd() != Cmd::Spacer {
                         break;
                     }
                 }
                 if st.scanner.cur_tok == Token::other(b'=') {
-                    get_token(st)?;
+                    get_token(st, env)?;
                     if st.scanner.cur.cmd() == Cmd::Spacer {
-                        get_token(st)?;
+                        get_token(st, env)?;
                     }
                 }
             } else {
-                get_token(st)?;
+                get_token(st, env)?;
                 let q = st.scanner.cur_tok;
-                get_token(st)?;
+                get_token(st, env)?;
                 back_input(st)?;
                 st.scanner.cur_tok = q;
                 back_input(st)?;
@@ -570,18 +595,20 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             if code == ShorthandDefCode::CharSub {
                 error(
                     st,
+                    env,
                     "vestigial MLTeX shorthand encountered??",
                     &["This should never happen in Tectonic, where MLTeX has been excised."],
                 )?;
             } else {
-                shorthand_def(st, a >= 4, code)?;
+                shorthand_def(st, env, a >= 4, code)?;
             }
         }
         Command::ReadToCs { line } => {
-            let n = scan_int(st)?;
-            if !scan_keyword(st, "to")? {
+            let n = scan_int(st, env)?;
+            if !scan_keyword(st, env, "to")? {
                 error(
                     st,
+                    env,
                     "Missing `to' inserted",
                     &[
                         r"You should have said `\read<number> to \cs'.",
@@ -589,19 +616,21 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                     ],
                 )?;
             }
-            let p = get_r_token(st)?;
-            let list = read_toks(st, n, p, line)?;
+            let p = get_r_token(st, env)?;
+            let list = read_toks(st, env, n, p, line)?;
             eqtb::define(st, a >= 4, p, Command::Call(list))?;
         }
-        cmd @ (Command::ToksRegister | Command::AssignToks(_)) => assign_toks(st, a >= 4, cmd)?,
+        cmd @ (Command::ToksRegister | Command::AssignToks(_)) => {
+            assign_toks(st, env, a >= 4, cmd)?
+        }
         Command::AssignInt(p) => {
-            scan_optional_equals(st)?;
-            let n = scan_int(st)?;
+            scan_optional_equals(st, env)?;
+            let n = scan_int(st, env)?;
             eqtb::define(st, a >= 4, p, n)?;
         }
         Command::AssignDimen(p) => {
-            scan_optional_equals(st)?;
-            let d = scan_dimen(st, false)?;
+            scan_optional_equals(st, env)?;
+            let d = scan_dimen(st, env, false)?;
             eqtb::define(st, a >= 4, p, d)?;
         }
         cmd @ (Command::AssignGlue(p) | Command::AssignMuGlue(p)) => {
@@ -610,35 +639,36 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 ValueLevel::Glue
             };
-            scan_optional_equals(st)?;
-            let g = scan_glue(st, level)?;
+            scan_optional_equals(st, env)?;
+            let g = scan_glue(st, env, level)?;
             let g = trap_zero_glue(st, g);
             eqtb::define(st, a >= 4, p, g)?;
         }
-        Command::XetexDefCode(base) => xetex_def_code(st, a >= 4, base)?,
-        Command::DefCode(base) => def_code(st, a >= 4, base)?,
+        Command::XetexDefCode(base) => xetex_def_code(st, env, a >= 4, base)?,
+        Command::DefCode(base) => def_code(st, env, a >= 4, base)?,
         Command::DefFamily(base) => {
-            let fam = scan_math_fam_int(st)?;
+            let fam = scan_math_fam_int(st, env)?;
             let p = base.family(u8::try_from(fam).or_confusion("family")?);
-            scan_optional_equals(st)?;
-            let f = scan_font_ident(st)?;
+            scan_optional_equals(st, env)?;
+            let f = scan_font_ident(st, env)?;
             eqtb::define(st, a >= 4, p, f)?;
         }
         Command::Register(_) | Command::Advance | Command::Multiply | Command::Divide => {
-            do_register_command(st, a as i16)?
+            do_register_command(st, env, a as i16)?
         }
         Command::SetBox => {
-            let n = scan_register_num(st)?;
+            let n = scan_register_num(st, env)?;
             let context = BoxContext::SetBox {
                 register: n,
                 global: a >= 4,
             };
-            scan_optional_equals(st)?;
+            scan_optional_equals(st, env)?;
             if st.scanner.set_box_allowed {
-                scan_box(st, context)?;
+                scan_box(st, env, context)?;
             } else {
                 error(
                     st,
+                    env,
                     ("Improper ", Esc("setbox")),
                     &[
                         r"Sorry, \setbox is not allowed after \halign in a display,",
@@ -647,21 +677,21 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 )?;
             }
         }
-        Command::SetAux(code) => alter_aux(st, code)?,
-        Command::SetPrevGraf => alter_prev_graf(st)?,
-        Command::SetPageDimen(code) => alter_page_so_far(st, code)?,
-        Command::SetPageInt(code) => alter_integer(st, code)?,
-        Command::SetBoxDimen(code) => alter_box_dimen(st, code)?,
-        Command::SetShape(loc) => set_shape(st, a >= 4, loc)?,
+        Command::SetAux(code) => alter_aux(st, env, code)?,
+        Command::SetPrevGraf => alter_prev_graf(st, env)?,
+        Command::SetPageDimen(code) => alter_page_so_far(st, env, code)?,
+        Command::SetPageInt(code) => alter_integer(st, env, code)?,
+        Command::SetBoxDimen(code) => alter_box_dimen(st, env, code)?,
+        Command::SetShape(loc) => set_shape(st, env, a >= 4, loc)?,
         Command::HyphData { patterns } => {
             if !patterns {
-                new_hyph_exceptions(st)?;
+                new_hyph_exceptions(st, env)?;
             } else if st.config.in_initex_mode {
-                new_patterns(st)?;
+                new_patterns(st, env)?;
             } else {
-                error(st, "Patterns can be loaded only by INITEX", &[])?;
+                error(st, env, "Patterns can be loaded only by INITEX", &[])?;
                 loop {
-                    get_token(st)?;
+                    get_token(st, env)?;
                     if st.scanner.cur.cmd() == Cmd::RightBrace {
                         return Ok(());
                     }
@@ -669,9 +699,9 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         Command::AssignFontDimen => {
-            let dimen = find_font_dimen(st, true)?;
-            scan_optional_equals(st)?;
-            let d = scan_dimen(st, false)?;
+            let dimen = find_font_dimen(st, env, true)?;
+            scan_optional_equals(st, env)?;
+            let d = scan_dimen(st, env, false)?;
             if let Some((f, n)) = dimen
                 && !st.fonts.params[f].set(n, d)
             {
@@ -679,11 +709,11 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         Command::AssignFontInt(code) => {
-            let f = scan_font_ident(st)?;
+            let f = scan_font_ident(st, env)?;
             let side = match code {
                 FontIntCode::HyphenChar | FontIntCode::SkewChar => {
-                    scan_optional_equals(st)?;
-                    let v = scan_int(st)?;
+                    scan_optional_equals(st, env)?;
+                    let v = scan_int(st, env)?;
                     if code == FontIntCode::HyphenChar {
                         st.fonts.hyphen_char[f] = v;
                     } else {
@@ -696,17 +726,17 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             };
             if let Some(side) = side {
                 let p = if st.fonts.is_native_font(f) {
-                    scan_glyph_number(st, f)?
+                    scan_glyph_number(st, env, f)?
                 } else {
-                    scan_char_num(st)?
+                    scan_char_num(st, env)?
                 };
-                scan_optional_equals(st)?;
-                let v = scan_int(st)?;
+                scan_optional_equals(st, env)?;
+                let v = scan_int(st, env)?;
                 st.fonts.cp_codes.set(f, side, p as u32, v);
             }
         }
-        Command::DefFont => new_font(st, a as i16)?,
-        Command::SetInteraction(mode) => new_interaction(st, mode),
+        Command::DefFont => new_font(st, env, a as i16)?,
+        Command::SetInteraction(mode) => new_interaction(st, env, mode),
         _ => return Err(Abort::Confusion("prefix")),
     }
 
@@ -718,22 +748,27 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Result<(), Abort> {
-    let p = get_r_token(st)?;
+fn shorthand_def(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    global: bool,
+    n: ShorthandDefCode,
+) -> Result<(), Abort> {
+    let p = get_r_token(st, env)?;
     eqtb::define(st, global, p, Command::Relax(RelaxCode::Primitive))?;
-    scan_optional_equals(st)?;
+    scan_optional_equals(st, env)?;
     let m = match n {
         ShorthandDefCode::Char => {
-            let c = scan_usv_num(st)?;
+            let c = scan_usv_num(st, env)?;
             Command::CharGiven(Usv::new(c).or_confusion("chardef")?)
         }
-        ShorthandDefCode::MathChar => Command::MathGiven(scan_fifteen_bit_int(st)?),
+        ShorthandDefCode::MathChar => Command::MathGiven(scan_fifteen_bit_int(st, env)?),
         ShorthandDefCode::XetexMathCharNum => {
-            Command::XetexMathGiven(scan_xetex_math_char_int(st)?)
+            Command::XetexMathGiven(scan_xetex_math_char_int(st, env)?)
         }
-        ShorthandDefCode::XetexMathChar => Command::XetexMathGiven(scan_umath_code(st)?),
+        ShorthandDefCode::XetexMathChar => Command::XetexMathGiven(scan_umath_code(st, env)?),
         _ => {
-            let r = scan_register_num(st)?;
+            let r = scan_register_num(st, env)?;
             match n {
                 ShorthandDefCode::Count => Command::AssignInt(IntLoc::count(r)),
                 ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
@@ -748,26 +783,31 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
     Ok(())
 }
 
-fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), Abort> {
+fn assign_toks(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    global: bool,
+    cmd: Command,
+) -> Result<(), Abort> {
     let cs = st.scanner.cur_cs;
     let target = match cmd {
-        Command::ToksRegister => RegisterLoc::Toks(ToksLoc::register(scan_register_num(st)?)),
+        Command::ToksRegister => RegisterLoc::Toks(ToksLoc::register(scan_register_num(st, env)?)),
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            RegisterLoc::InterChar(scan_inter_char_pair(st)?)
+            RegisterLoc::InterChar(scan_inter_char_pair(st, env)?)
         }
         Command::AssignToks(loc) => RegisterLoc::Toks(loc),
         _ => return Err(Abort::Confusion("assign_toks")),
     };
-    scan_optional_equals(st)?;
-    get_x_non_blank_non_relax(st)?;
+    scan_optional_equals(st, env)?;
+    get_x_non_blank_non_relax(st, env)?;
 
     let source = match st.scanner.cur {
         Command::ToksRegister => {
-            let n = scan_register_num(st)?;
+            let n = scan_register_num(st, env)?;
             Some(st.eqtb.toks(n))
         }
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            let pair = scan_inter_char_pair(st)?;
+            let pair = scan_inter_char_pair(st, env)?;
             Some(st.eqtb.inter_char.get(pair))
         }
         Command::AssignToks(loc) => Some(st.eqtb.toks.get(loc)),
@@ -782,7 +822,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
 
     back_input(st)?;
     st.scanner.cur_cs = cs;
-    let def_ref = scan_toks(st, false, false)?;
+    let def_ref = scan_toks(st, env, false, false)?;
     if st.mem.tokens.is_empty(def_ref) {
         define_toks(st, global, target, TokenList::NULL)?;
         st.mem.tokens.flush(def_ref);
@@ -795,38 +835,43 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     define_toks(st, global, target, def_ref)
 }
 
-fn xetex_def_code(st: &mut EngineState, global: bool, code: XetexCode) -> Result<(), Abort> {
-    let c = scan_usv_num(st)?;
+fn xetex_def_code(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    global: bool,
+    code: XetexCode,
+) -> Result<(), Abort> {
+    let c = scan_usv_num(st, env)?;
     match code {
         XetexCode::CharClass => {
             let sf = st.eqtb.sf_code(c) % 65536;
-            scan_optional_equals(st)?;
-            let class = scan_char_class(st)?;
+            scan_optional_equals(st, env)?;
+            let class = scan_char_class(st, env)?;
             let v = class.wrapping_mul(65536).wrapping_add(sf);
             eqtb::define(st, global, SfLoc::of(c), v)?;
         }
         XetexCode::MathCodeNum => {
-            scan_optional_equals(st)?;
-            let v = scan_xetex_math_char_int(st)?;
+            scan_optional_equals(st, env)?;
+            let v = scan_xetex_math_char_int(st, env)?;
             eqtb::define(st, global, MathLoc::of(c), v)?;
         }
         XetexCode::MathCode => {
-            scan_optional_equals(st)?;
-            let v = scan_umath_code(st)?;
+            scan_optional_equals(st, env)?;
+            let v = scan_umath_code(st, env)?;
             eqtb::define(st, global, MathLoc::of(c), v)?;
         }
         XetexCode::DelCodeNum => {
-            scan_optional_equals(st)?;
-            let v = scan_int(st)?;
+            scan_optional_equals(st, env)?;
+            let v = scan_int(st, env)?;
             eqtb::define(st, global, DelLoc::of(c), v)?;
         }
         XetexCode::DelCode => {
-            scan_optional_equals(st)?;
+            scan_optional_equals(st, env)?;
             // Extended delimiter code flag.
             let mut n: i32 = 0x4000_0000;
-            let fam = scan_math_fam_int(st)?;
+            let fam = scan_math_fam_int(st, env)?;
             n = n.wrapping_add(fam.wrapping_mul(0x20_0000));
-            let d = scan_usv_num(st)?;
+            let d = scan_usv_num(st, env)?;
             n = n.wrapping_add(d);
             eqtb::define(st, global, DelLoc::of(c), n)?;
         }
@@ -834,7 +879,12 @@ fn xetex_def_code(st: &mut EngineState, global: bool, code: XetexCode) -> Result
     Ok(())
 }
 
-fn def_code(st: &mut EngineState, global: bool, table: CodeTable) -> Result<(), Abort> {
+fn def_code(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    global: bool,
+    table: CodeTable,
+) -> Result<(), Abort> {
     let max = match table {
         CodeTable::Cat => Cmd::MAX_CHAR_CODE.into(),
         CodeTable::Math => 0x8000,
@@ -842,9 +892,9 @@ fn def_code(st: &mut EngineState, global: bool, table: CodeTable) -> Result<(), 
         CodeTable::Del => 0xFF_FFFF,
         CodeTable::Lc | CodeTable::Uc => BIGGEST_USV,
     };
-    let c = scan_usv_num(st)?;
-    scan_optional_equals(st)?;
-    let mut v = scan_int(st)?;
+    let c = scan_usv_num(st, env)?;
+    scan_optional_equals(st, env)?;
+    let mut v = scan_int(st, env)?;
     let del = table == CodeTable::Del;
     if (v < 0 && !del) || v > max {
         let bound = if del {
@@ -854,6 +904,7 @@ fn def_code(st: &mut EngineState, global: bool, table: CodeTable) -> Result<(), 
         };
         error(
             st,
+            env,
             ("Invalid code (", v, bound, max),
             &["I'm going to use 0 instead of that illegal code value."],
         )?;
@@ -881,9 +932,14 @@ fn def_code(st: &mut EngineState, global: bool, table: CodeTable) -> Result<(), 
     }
 }
 
-fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abort> {
-    scan_optional_equals(st)?;
-    let n = scan_int(st)?;
+fn set_shape(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    global: bool,
+    q: ShapeLoc,
+) -> Result<(), Abort> {
+    scan_optional_equals(st, env)?;
+    let n = scan_int(st, env)?;
     let p = if n <= 0 {
         ShapeRef::NONE
     } else if q != ShapeLoc::ParShape {
@@ -893,7 +949,7 @@ fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abor
         st.mem[penalties].count = n;
         let slots = st.mem.entries(penalties).len();
         for (k, slot) in (1..).zip(0..slots) {
-            let v = if k <= n { scan_int(st)? } else { 0 };
+            let v = if k <= n { scan_int(st, env)? } else { 0 };
             st.mem.entries_mut(penalties)[slot].value = v;
         }
         ShapeRef::penalties(penalties)
@@ -901,9 +957,9 @@ fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abor
         let lines = usize::try_from(n).or_confusion("parshape")?;
         let shape = st.mem.alloc_array::<ParShapeNode>(lines)?;
         for line in 0..st.mem.entries(shape).len() {
-            let indent = scan_dimen(st, false)?;
+            let indent = scan_dimen(st, env, false)?;
             st.mem.entries_mut(shape)[line].indent = indent;
-            let width = scan_dimen(st, false)?;
+            let width = scan_dimen(st, env, false)?;
             st.mem.entries_mut(shape)[line].width = width;
         }
         ShapeRef::par_shape(shape)

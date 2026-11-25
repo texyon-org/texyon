@@ -182,7 +182,7 @@ impl Font {
     pub fn from_platform(
         font: PlatformFontRef,
         point_size: Fixed,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Option<Font> {
         Font::new(font, fix_to_d(point_size) as f32, io).ok()
     }
@@ -192,7 +192,7 @@ impl Font {
         path: &str,
         index: usize,
         point_size: Fixed,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Option<Font> {
         Font::new_path_index(Some(path), index, fix_to_d(point_size) as f32, io).ok()
     }
@@ -201,7 +201,7 @@ impl Font {
     pub(crate) fn new(
         font: PlatformFontRef,
         point_size: f32,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Result<Font, ()> {
         let path = font
             .as_ref()
@@ -217,7 +217,7 @@ impl Font {
     pub(crate) fn new(
         descriptor: PlatformFontRef,
         point_size: f32,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Result<Font, ()> {
         let mut out = Font {
             units_per_em: 0,
@@ -243,7 +243,7 @@ impl Font {
         path: Option<&str>,
         index: usize,
         point_size: f32,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Result<Font, ()> {
         let mut out = Font {
             units_per_em: 0,
@@ -271,7 +271,7 @@ impl Font {
         &mut self,
         pathname: &str,
         index: usize,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Result<(), ()> {
         let handle = io
             .input_open(pathname, FileFormat::OpenType, false)
@@ -378,7 +378,7 @@ impl Font {
     }
 
     #[cfg(target_os = "macos")]
-    fn initialize_mac(&mut self, io: &mut CoreBridgeState<'_>) -> Result<(), ()> {
+    fn initialize_mac(&mut self, io: &mut CoreBridgeState<'_, '_>) -> Result<(), ()> {
         let FontKind::Mac(descriptor, font_ref) = &mut self.kind else {
             return Err(());
         };

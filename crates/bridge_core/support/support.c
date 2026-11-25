@@ -64,27 +64,6 @@ xstrdup(const char *s)
 }
 
 
-/* C API helpers that don't rely upon the global state variables */
-
-PRINTF_FUNC(2,0) void
-ttstub_diag_vprintf(ttbc_diagnostic_t *diag, const char *format, va_list ap)
-{
-    vsnprintf(format_buf, BUF_SIZE, format, ap);
-    ttbc_diag_append(diag, format_buf);
-}
-
-
-PRINTF_FUNC(2,3) void
-ttstub_diag_printf(ttbc_diagnostic_t *diag, const char *format, ...)
-{
-    va_list ap;
-
-    va_start(ap, format);
-    ttstub_diag_vprintf(diag, format, ap);
-    va_end(ap);
-}
-
-
 /* The global state helpers */
 
 static ttbc_state_t *texyon_global_bridge_core = NULL;
@@ -162,25 +141,6 @@ ttstub_issue_warning(const char *format, ...)
 }
 
 
-PRINTF_FUNC(1,2) void
-ttstub_issue_error(const char *format, ...)
-{
-    va_list ap;
-
-    va_start(ap, format);
-    vsnprintf(format_buf, BUF_SIZE, format, ap); /* Not ideal to (ab)use format_buf here */
-    va_end(ap);
-    ttbc_issue_error(texyon_global_bridge_core, format_buf);
-}
-
-
-void
-ttstub_diag_finish(ttbc_diagnostic_t *diag)
-{
-    ttbc_diag_finish(texyon_global_bridge_core, diag);
-}
-
-
 rust_output_handle_t
 ttstub_output_open(char const *path, int is_gz)
 {
@@ -209,36 +169,6 @@ ttstub_output_write(rust_output_handle_t handle, const char *data, size_t len)
 }
 
 
-PRINTF_FUNC(2,3) int
-ttstub_fprintf(rust_output_handle_t handle, const char *format, ...)
-{
-    static char fprintf_buf[BUF_SIZE] = "";
-    va_list ap;
-
-    va_start(ap, format);
-    int len = vsnprintf(fprintf_buf, BUF_SIZE, format, ap);
-    va_end(ap);
-
-    if (len >= BUF_SIZE) {
-        len = BUF_SIZE - 1;
-        fprintf_buf[len] = '\0';
-    }
-
-    if (len >= 0) {
-        ttstub_output_write(handle, fprintf_buf, len);
-    }
-
-    return len;
-}
-
-
-int
-ttstub_output_flush(rust_output_handle_t handle)
-{
-    return ttbc_output_flush(texyon_global_bridge_core, handle);
-}
-
-
 int
 ttstub_output_close(rust_output_handle_t handle)
 {
@@ -252,19 +182,6 @@ ttstub_input_open(char const *path, ttbc_file_format format, int is_gz)
     return ttbc_input_open(texyon_global_bridge_core, path, format, is_gz);
 }
 
-
-rust_input_handle_t
-ttstub_input_open_primary(void)
-{
-    return ttbc_input_open_primary(texyon_global_bridge_core);
-}
-
-
-ssize_t
-ttstub_get_last_input_abspath(char *buffer, size_t len)
-{
-    return ttbc_get_last_input_abspath(texyon_global_bridge_core, (uint8_t *) buffer, len);
-}
 
 size_t
 ttstub_input_get_size(rust_input_handle_t handle)
@@ -336,19 +253,6 @@ ttstub_input_close(rust_input_handle_t handle)
     }
 
     return 0;
-}
-
-
-int
-ttstub_get_file_md5(char const *path, char *digest)
-{
-    return ttbc_get_file_md5(texyon_global_bridge_core, path, (uint8_t *) digest);
-}
-
-int
-ttstub_shell_escape(const unsigned short *cmd, size_t len)
-{
-    return ttbc_shell_escape(texyon_global_bridge_core, cmd, len);
 }
 
 

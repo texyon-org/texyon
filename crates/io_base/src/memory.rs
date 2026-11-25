@@ -188,6 +188,15 @@ impl MemoryIo {
         );
     }
 
+    /// Another provider over the same files, so one can be handed to an engine
+    /// while this one reads what it wrote.
+    pub fn share(&self) -> MemoryIo {
+        MemoryIo {
+            files: Rc::clone(&self.files),
+            stdout_allowed: self.stdout_allowed,
+        }
+    }
+
     /// Name to use for stdout file
     pub fn stdout_key(&self) -> &str {
         ""

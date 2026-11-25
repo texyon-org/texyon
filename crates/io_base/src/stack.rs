@@ -15,12 +15,13 @@ use super::{InputHandle, IoProvider, OpenResult, OutputHandle};
 /// need to run multiple passes of the TeX engine.
 // Note: needs a manual debug implementation?
 pub struct IoStack<'a> {
-    items: Vec<&'a mut dyn IoProvider>,
+    items: Vec<Box<dyn IoProvider + 'a>>,
 }
 
 impl<'a> IoStack<'a> {
-    /// Create a new I/O stack.
-    pub fn new(items: Vec<&'a mut dyn IoProvider>) -> IoStack<'a> {
+    /// Create a new I/O stack. Box a `&mut` provider to lend it, or the
+    /// provider itself to hand it over.
+    pub fn new(items: Vec<Box<dyn IoProvider + 'a>>) -> IoStack<'a> {
         IoStack { items }
     }
 }

@@ -31,7 +31,6 @@ pub const MAIN_MEMORY_WORDS: i32 = 1 << 26;
 pub const FONT_BASE: i32 = 0;
 pub const NULL_FONT: FontId = FontId::new(0);
 pub const MAX_FONT_MAX: i32 = 9_000;
-pub const INVALID_HANDLE: usize = 0;
 
 pub const HISTORY_SPOTLESS: i32 = 0;
 pub const HISTORY_WARNING_ISSUED: i32 = 1;

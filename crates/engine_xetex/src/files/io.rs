@@ -1,26 +1,21 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use std::cell::RefCell;
-use std::io::Error;
-use std::{iter, mem, ptr, slice};
+use std::{iter, mem, slice};
 
 use texyon_bridge_core::EOF;
 
 use crate::base::cmd::Cmd;
-use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
+use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, JUST_OPEN};
 use crate::base::params::IntPar;
 use crate::base::token::TokCursor;
 use crate::base::units::{BufPos, StrNumber};
 use crate::base::utf8;
 use crate::base::utf8::{BYTES_FROM_UTF8, OFFSETS_FROM_UTF8, next_utf8_char};
 use crate::engine::output_file_extension;
-use crate::ffi::bridge::{
-    FileFormat, directory_exists, input_getc, input_open, input_open_primary, input_ungetc,
-    last_input_abspath, last_input_found, output_close, output_flush, output_open,
-};
-pub(crate) use crate::ffi::bridge::{input_close, input_seek};
-use crate::ffi::teckit_icu::{FontMappingHandle, with_c_str};
+use crate::env::{EngineEnv, WriteStream};
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::files::input_file::{Decoder, Encoding, IcuConverter, InputFile};
 use crate::print::diagnostic::warn_host;
 use crate::print::errors::{Abort, FilePrompt, prompt_file_name};
 use crate::print::{
@@ -37,6 +32,7 @@ use crate::shipout::synctex::{synctex_start_input, synctex_terminate};
 use crate::shipout::{ensure_write_stream_open, finalize_dvi_file};
 use crate::state::EngineState;
 use crate::tables::string_pool::StringsState;
+use texyon_bridge_core::FileFormat;
 
 pub(crate) const AUTO: i32 = 0;
 pub(crate) const UTF8: i32 = 1;
@@ -53,45 +49,6 @@ const K_FORM_NFC: u16 = 0x0100;
 const K_FORM_NFD: u16 = 0x0200;
 pub(crate) const K_STATUS_NO_ERROR: libc::c_long = 0;
 
-#[cfg(target_endian = "little")]
-const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 8;
-#[cfg(target_endian = "big")]
-const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 7;
-
-/// An open input file with its encoding state. The layout is that of the
-/// C `UFILE`, which keeps the checkpoint format readable.
-#[repr(C)]
-pub(crate) struct UFile {
-    pub handle: usize,
-    pub saved_char: i64,
-    pub skip_next_lf: i16,
-    pub encoding_mode: i16,
-    pub conversion_data: *mut libc::c_void,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(
-    mem::size_of::<UFile>() == 32,
-    "UFile size mismatch with C UFILE"
-);
-
-impl UFile {
-    fn close_converter(&mut self) {
-        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
-            // SAFETY: `set_input_file_encoding` installed this converter for
-            // this file alone, and the pointer is cleared after closing.
-            unsafe { ucnv_close(self.conversion_data) };
-        }
-        self.conversion_data = ptr::null_mut();
-    }
-}
-
-impl Drop for UFile {
-    fn drop(&mut self) {
-        self.close_converter();
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(crate) enum FileSlot {
     Input(usize),
@@ -107,71 +64,51 @@ impl FileSlot {
     }
 }
 
-/// Runs `f` on the file in `slot`, which is detached from the state for the
-/// call. The terminal gets a stand-in with no handle, an empty slot `None`.
-pub(crate) fn with_slot_file<R>(
+/// Reads the next line of the file in `slot` into `buffer[first..last]`.
+/// Returns `false` at end of file.
+pub(crate) fn input_slot_line(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     slot: FileSlot,
-    f: impl FnOnce(&mut EngineState, &mut UFile) -> R,
-) -> Option<R> {
+) -> Result<bool, Abort> {
     let mut taken = mem::take(slot.get(st));
     let result = match &mut taken {
-        InputSlot::Empty => None,
-        InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
-        InputSlot::Open(file) => Some(f(st, file)),
+        InputSlot::Open(file) => input_line(st, env, file),
+        InputSlot::Empty | InputSlot::Terminal => Err(Abort::Internal(
+            "reads from synthetic \"terminal\" file #0 should never happen",
+        )),
     };
     *slot.get(st) = taken;
     result
 }
 
-pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<libc::c_int, Abort> {
-    with_slot_file(st, slot, input_line).expect("input_line on an empty input slot")
-}
-
-impl UFile {
-    fn terminal() -> UFile {
-        UFile {
-            handle: INVALID_HANDLE,
-            saved_char: -1,
-            skip_next_lf: 0,
-            encoding_mode: UTF8 as i16,
-            conversion_data: ptr::null_mut(),
+/// Switches the file in `slot` to `mode`. On the terminal the switch only reports
+/// a converter that fails to open.
+pub(crate) fn set_slot_encoding(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    slot: FileSlot,
+    mode: i32,
+    encoding_data: i32,
+) -> Result<(), Abort> {
+    let mut taken = mem::take(slot.get(st));
+    match &mut taken {
+        InputSlot::Empty => {}
+        InputSlot::Terminal => {
+            decoder_for(st, env, mode, encoding_data);
+        }
+        InputSlot::Open(file) => {
+            if let Some(decoder) = decoder_for(st, env, mode, encoding_data) {
+                file.decoder = decoder;
+            }
         }
     }
-}
-
-// ICU checks the incoming UErrorCode, so it must be zeroed before each call.
-unsafe extern "C" {
-    #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_open(converter_name: *const libc::c_char, err: *mut i32) -> *mut libc::c_void;
-    #[link_name = concat!("ucnv_close", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_close(converter: *mut libc::c_void);
-    #[link_name = concat!("ucnv_toAlgorithmic", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_toAlgorithmic(
-        algorithmic_type: libc::c_int,
-        cnv: *mut libc::c_void,
-        target: *mut libc::c_char,
-        target_capacity: i32,
-        source: *const libc::c_char,
-        source_length: i32,
-        err: *mut i32,
-    ) -> i32;
-}
-
-fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
-    let mut err: i32 = 0;
-    let cnv = with_c_str(name, |name| {
-        // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
-        unsafe { ucnv_open(name, &mut err) }
-    });
-    if cnv.is_null() { Err(err) } else { Ok(cnv) }
+    *slot.get(st) = taken;
+    Ok(())
 }
 
 pub(crate) fn icu_converter_exists(name: &[u8]) -> Result<(), libc::c_int> {
-    let cnv = icu_converter_open(name)?;
-    // SAFETY: `cnv` was just opened and is not used again.
-    unsafe { ucnv_close(cnv) };
-    Ok(())
+    IcuConverter::open(name).map(drop)
 }
 
 fn utf32_bytes(units: &[u32]) -> &[u8] {
@@ -189,86 +126,56 @@ trait Utf32Unit {}
 impl Utf32Unit for i32 {}
 impl Utf32Unit for u32 {}
 
-fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i32, libc::c_int) {
-    let mut err: i32 = 0;
-    // SAFETY: `cnv` is the open converter of an input file, both buffers are
-    // valid for the lengths passed and `err` is a valid out-parameter.
-    let len = unsafe {
-        ucnv_toAlgorithmic(
-            UCNV_UTF32_NATIVE_ENDIAN,
-            cnv,
-            target.as_mut_ptr().cast(),
-            target.len() as i32,
-            source.as_ptr().cast(),
-            source.len() as i32,
-            &mut err,
-        )
-    };
-    (len, err)
-}
-
 pub(crate) struct FoundInput {
     /// The path plus the extension the bridge added, as TeX Live prints it.
     pub name: Vec<u8>,
     pub abspath: Vec<u8>,
 }
 
-/// Opens input `path`. `None` means it was not found.
+/// Opens input `path` undecoded. `None` means it was not found.
 pub(crate) fn open_input_file(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     path: &[u8],
     filefmt: FileFormat,
-) -> Option<(usize, FoundInput)> {
-    let handle = if filefmt == FileFormat::TexyonPrimary {
-        input_open_primary()
+) -> Option<(InputFile, FoundInput)> {
+    let opened = if filefmt == FileFormat::TexyonPrimary {
+        env.open_primary_input()
     } else if path.first() == Some(&b'|') {
         // TeX Live without shell escape takes the name as a file, which is not found.
-        warn_host(st, "TeXyoN cannot read from shell commands");
+        warn_host(st, env, "TeXyoN cannot read from shell commands");
         return None;
     } else {
-        input_open(path, filefmt, false)
-    };
-
-    if handle == INVALID_HANDLE {
-        return None;
-    }
+        env.open_input(path, filefmt, false)
+    }?;
 
     let name = if filefmt == FileFormat::TexyonPrimary {
         path.to_vec()
     } else {
-        last_found_name(path)
+        opened.found.name(path)
     };
-    let abspath = last_input_abspath();
-    Some((handle, FoundInput { name, abspath }))
-}
-
-/// The name the last input asked as `path` was found under, as kpathsea returns it.
-pub(crate) fn last_found_name(path: &[u8]) -> Vec<u8> {
-    last_input_found().name(path)
+    let found = FoundInput {
+        name,
+        abspath: opened.abspath,
+    };
+    Some((InputFile::new(opened.source), found))
 }
 
 pub(crate) fn u_open_in(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     path: &[u8],
     filefmt: FileFormat,
     mut mode: i32,
     encoding_data: i32,
-) -> Result<Option<(Box<UFile>, FoundInput)>, Abort> {
-    let Some((handle, found)) = open_input_file(st, path, filefmt) else {
+) -> Result<Option<(Box<InputFile>, FoundInput)>, Abort> {
+    let Some((mut f, found)) = open_input_file(st, env, path, filefmt) else {
         return Ok(None);
     };
 
-    let mut f = Box::new(UFile {
-        handle,
-        saved_char: -1,
-        skip_next_lf: 0,
-        encoding_mode: 0,
-        conversion_data: ptr::null_mut(),
-    });
-
     if mode == AUTO {
-        let b1 = input_getc(f.handle);
-        let b2 = input_getc(f.handle);
+        let b1 = f.getc(env);
+        let b2 = f.getc(env);
 
         if b1 == 0xfe && b2 == 0xff {
             mode = UTF16BE;
@@ -276,93 +183,87 @@ pub(crate) fn u_open_in(
             mode = UTF16LE;
         } else if b1 == 0 && b2 != 0 {
             mode = UTF16BE;
-            input_seek(f.handle, 0);
+            f.rewind(env);
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
-            input_seek(f.handle, 0);
-        } else if b1 == 0xEF && b2 == 0xBB && input_getc(f.handle) == 0xBF {
+            f.rewind(env);
+        } else if b1 == 0xEF && b2 == 0xBB && f.getc(env) == 0xBF {
             mode = UTF8;
         }
 
         if mode == AUTO {
-            input_seek(f.handle, 0);
+            f.rewind(env);
             mode = UTF8;
         }
+        f.sync(env);
     }
 
-    set_input_file_encoding(st, &mut f, mode, encoding_data)?;
-    Ok(Some((f, found)))
+    if let Some(decoder) = decoder_for(st, env, mode, encoding_data) {
+        f.decoder = decoder;
+    }
+    Ok(Some((Box::new(f), found)))
 }
 
-pub(crate) fn set_input_file_encoding(
+/// The decoder for input mode `mode`, `None` for a mode that names none. A
+/// converter that fails to open is reported and reads raw bytes.
+fn decoder_for(
     st: &mut EngineState,
-    f: &mut UFile,
+    env: &mut EngineEnv,
     mode: i32,
     encoding_data: i32,
-) -> Result<(), Abort> {
-    f.close_converter();
-
-    match mode {
-        UTF8 | UTF16BE | UTF16LE | RAW => {
-            f.encoding_mode = mode as i16;
-        }
+) -> Option<Decoder> {
+    let encoding = match mode {
+        UTF8 => Encoding::Utf8,
+        UTF16BE => Encoding::Utf16Be,
+        UTF16LE => Encoding::Utf16Le,
+        RAW => Encoding::Raw,
         ICUMAPPING => {
             let name = st
                 .strings
                 .texstring_bytes(StrNumber::from_raw(encoding_data));
-            match icu_converter_open(&name) {
+            match IcuConverter::open(&name) {
+                Ok(cnv) => return Some(Decoder::Icu(cnv)),
                 Err(err) => {
                     begin_diagnostic(st);
-                    print_nl(st, b'E');
-                    print(st, "rror ");
-                    print_int(st, err);
-                    print(st, " creating Unicode converter for `");
-                    print(st, &name[..]);
-                    print(st, "'; reading as raw bytes");
-                    end_diagnostic(st, true);
-                    f.encoding_mode = RAW as i16;
-                }
-                Ok(cnv) => {
-                    f.encoding_mode = ICUMAPPING as i16;
-                    f.conversion_data = cnv;
+                    print_nl(st, env, b'E');
+                    print(st, env, "rror ");
+                    print_int(st, env, err);
+                    print(st, env, " creating Unicode converter for `");
+                    print(st, env, &name[..]);
+                    print(st, env, "'; reading as raw bytes");
+                    end_diagnostic(st, env, true);
+                    Encoding::Raw
                 }
             }
         }
-        _ => {}
-    }
-    Ok(())
+        _ => return None,
+    };
+    Some(Decoder::Plain(encoding))
 }
 
+/// Buffers a line read reuses from one line to the next.
 #[derive(Default)]
-struct LineScratch {
+pub(crate) struct LineScratch {
     bytes: Vec<u8>,
     utf32: Vec<u32>,
     normalizers: [Option<FontMappingHandle>; 2],
-}
-
-thread_local! {
-    static LINE_SCRATCH: RefCell<LineScratch> = Default::default();
 }
 
 fn is_line_end(c: i32) -> bool {
     c == EOF || c == i32::from(b'\n') || c == i32::from(b'\r')
 }
 
-fn is_true_eof(c: i32) -> bool {
-    c == EOF && Error::last_os_error().raw_os_error() != Some(libc::EINTR)
-}
-
 fn line_too_long() -> Abort {
     Abort::Internal("unable to read an entire line (buffer too small)")
 }
 
-fn conversion_error(st: &mut EngineState, errcode: i32) {
+fn conversion_error(st: &mut EngineState, env: &mut EngineEnv, errcode: i32) {
     begin_diagnostic(st);
-    print_nl(st, b'U');
-    print(st, "nicode conversion failed (ICU error code = ");
-    print_int(st, errcode);
-    print(st, ") discarding any remaining text");
-    end_diagnostic(st, true);
+    print_nl(st, env, b'U');
+    print(st, env, "nicode conversion failed (ICU error code = ");
+    print_int(st, env, errcode);
+    print(st, env, ") discarding any remaining text");
+    end_diagnostic(st, env, true);
 }
 
 /// Normalizes the UTF-32 `units` into `buffer[first..]` (NFC for `norm` 1,
@@ -395,27 +296,30 @@ fn apply_normalization(
 }
 
 /// Reads one line of `f` into `buffer[first..last]`, decoding and optionally
-/// normalizing it. Returns 0 at end of file.
-pub(crate) fn input_line(st: &mut EngineState, f: &mut UFile) -> Result<libc::c_int, Abort> {
-    LINE_SCRATCH.with(|scratch| input_line_with(st, f, &mut scratch.borrow_mut()))
+/// normalizing it. Returns `false` at end of file.
+pub(crate) fn input_line(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    f: &mut InputFile,
+) -> Result<bool, Abort> {
+    let mut scratch = mem::take(&mut env.line_scratch);
+    let more = input_line_with(st, env, f, &mut scratch);
+    env.line_scratch = scratch;
+    f.sync(env);
+    more
 }
 
 fn input_line_with(
     st: &mut EngineState,
-    f: &mut UFile,
+    env: &mut EngineEnv,
+    f: &mut InputFile,
     scratch: &mut LineScratch,
-) -> Result<libc::c_int, Abort> {
+) -> Result<bool, Abort> {
     let norm = if st.eqtb.ints.values().is_empty() {
         0
     } else {
         st.eqtb.int_par(IntPar::XetexInputNormalization)
     };
-
-    if f.handle == INVALID_HANDLE {
-        return Err(Abort::Internal(
-            "reads from synthetic \"terminal\" file #0 should never happen",
-        ));
-    }
 
     st.input.last = st.input.first;
     let buf_size = st.input.buf_size.index();
@@ -424,23 +328,20 @@ fn input_line_with(
     }
 
     let mut i;
-    if i32::from(f.encoding_mode) == ICUMAPPING {
+    if matches!(f.decoder, Decoder::Icu(_)) {
         scratch.bytes.resize(buf_size + 1, 0);
         let mut bytes_read = 0;
 
-        i = input_getc(f.handle);
-        if f.skip_next_lf != 0 {
-            f.skip_next_lf = 0;
-            if i == b'\n' as libc::c_int {
-                i = input_getc(f.handle);
-            }
+        i = f.getc(env);
+        if mem::take(&mut f.pending_lf) && i == i32::from(b'\n') {
+            i = f.getc(env);
         }
 
         if !is_line_end(i) {
             scratch.bytes[bytes_read] = i as u8;
             bytes_read += 1;
             while bytes_read < buf_size {
-                i = input_getc(f.handle);
+                i = f.getc(env);
                 if is_line_end(i) {
                     break;
                 }
@@ -449,40 +350,39 @@ fn input_line_with(
             }
         }
 
-        if is_true_eof(i) && bytes_read == 0 {
-            return Ok(0);
+        if i == EOF && bytes_read == 0 {
+            return Ok(false);
         }
         if !is_line_end(i) {
             return Err(line_too_long());
         }
 
-        let cnv = f.conversion_data;
+        let Decoder::Icu(cnv) = &mut f.decoder else {
+            unreachable!("checked above");
+        };
         let source = &scratch.bytes[..bytes_read];
         if norm == 1 || norm == 2 {
-            let (len, error_code) = icu_to_utf32(cnv, utf32_bytes_mut(&mut scratch.utf32), source);
+            let (len, error_code) = cnv.decode(utf32_bytes_mut(&mut scratch.utf32), source);
             if error_code != 0 {
-                conversion_error(st, error_code);
-                return Ok(0);
+                conversion_error(st, env, error_code);
+                return Ok(false);
             }
             let units = &scratch.utf32[..(len / 4) as usize];
             apply_normalization(st, &mut scratch.normalizers, units, norm)?;
         } else {
             let first = st.input.first.index();
             let out = utf32_bytes_mut(&mut st.input.buffer.0[first..buf_size]);
-            let (len, error_code) = icu_to_utf32(cnv, out, source);
+            let (len, error_code) = cnv.decode(out, source);
             if error_code != 0 {
-                conversion_error(st, error_code);
-                return Ok(0);
+                conversion_error(st, env, error_code);
+                return Ok(false);
             }
             st.input.last = st.input.first + len / 4;
         }
     } else {
-        i = get_uni_c(st, f)?;
-        if f.skip_next_lf != 0 {
-            f.skip_next_lf = 0;
-            if i == i32::from(b'\n') {
-                i = get_uni_c(st, f)?;
-            }
+        i = get_uni_c(st, env, f);
+        if mem::take(&mut f.pending_lf) && i == i32::from(b'\n') {
+            i = get_uni_c(st, env, f);
         }
 
         if norm == 1 || norm == 2 {
@@ -491,7 +391,7 @@ fn input_line_with(
                 scratch.utf32[len] = i as u32;
                 len += 1;
                 while len < buf_size {
-                    i = get_uni_c(st, f)?;
+                    i = get_uni_c(st, env, f);
                     if is_line_end(i) {
                         break;
                     }
@@ -500,8 +400,8 @@ fn input_line_with(
                 }
             }
 
-            if is_true_eof(i) && len == 0 {
-                return Ok(0);
+            if i == EOF && len == 0 {
+                return Ok(false);
             }
             if !is_line_end(i) {
                 return Err(line_too_long());
@@ -512,7 +412,7 @@ fn input_line_with(
                 st.input.buffer[st.input.last] = i;
                 st.input.last += 1;
                 while st.input.last < st.input.buf_size {
-                    i = get_uni_c(st, f)?;
+                    i = get_uni_c(st, env, f);
                     if is_line_end(i) {
                         break;
                     }
@@ -521,8 +421,8 @@ fn input_line_with(
                 }
             }
 
-            if is_true_eof(i) && st.input.last == st.input.first {
-                return Ok(0);
+            if i == EOF && st.input.last == st.input.first {
+                return Ok(false);
             }
             if !is_line_end(i) {
                 return Err(line_too_long());
@@ -531,7 +431,7 @@ fn input_line_with(
     }
 
     if i == i32::from(b'\r') {
-        f.skip_next_lf = 1;
+        f.pending_lf = true;
     }
 
     st.input.buffer[st.input.last] = i32::from(b' ');
@@ -547,79 +447,68 @@ fn input_line_with(
         st.input.last -= 1;
     }
 
-    Ok(1)
+    Ok(true)
 }
 
-/// The only abort of [`get_uni_c`]. Being fieldless keeps the per-character
-/// `Result` in registers on this hot path.
-pub(crate) struct InvalidInputMode;
-
-impl From<InvalidInputMode> for Abort {
-    fn from(_: InvalidInputMode) -> Self {
-        Abort::Internal("internal error; file input mode is invalid")
-    }
-}
-
-pub(crate) fn get_uni_c(
-    st: &mut EngineState,
-    f: &mut UFile,
-) -> Result<libc::c_int, InvalidInputMode> {
-    if f.saved_char != -1 {
-        let rval = f.saved_char as i32;
-        f.saved_char = -1;
-        return Ok(rval);
+/// The next character of `f` in one of the encodings the engine decodes itself.
+fn get_uni_c(st: &mut EngineState, env: &mut EngineEnv, f: &mut InputFile) -> i32 {
+    if let Some(saved) = f.saved.take() {
+        return saved;
     }
 
-    let handle = f.handle;
-    let rval = match i32::from(f.encoding_mode) {
-        UTF8 => {
-            let mut rval = input_getc(handle);
+    let Decoder::Plain(encoding) = f.decoder else {
+        unreachable!("ICU input is read as bytes");
+    };
+    match encoding {
+        Encoding::Utf8 => {
+            let mut rval = f.getc(env);
             if rval != EOF {
                 let extra_bytes = BYTES_FROM_UTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
-                    bad_utf8_warning(st);
-                    return Ok(0xFFFD);
+                    bad_utf8_warning(st, env);
+                    return 0xFFFD;
                 }
                 for _ in 0..extra_bytes {
-                    let c = input_getc(handle);
+                    let c = f.getc(env);
                     if !(0x80..0xC0).contains(&c) {
                         if c != EOF {
-                            input_ungetc(handle, c);
+                            f.unget();
                         }
-                        bad_utf8_warning(st);
-                        return Ok(0xFFFD);
+                        bad_utf8_warning(st, env);
+                        return 0xFFFD;
                     }
                     rval = (rval << 6) + c;
                 }
                 let offset = OFFSETS_FROM_UTF8[extra_bytes];
                 rval = (rval as u32).wrapping_sub(offset) as i32;
                 if !(0..=0x10ffff).contains(&rval) {
-                    bad_utf8_warning(st);
-                    return Ok(0xFFFD);
+                    bad_utf8_warning(st, env);
+                    return 0xFFFD;
                 }
             }
             rval
         }
 
-        mode @ (UTF16BE | UTF16LE) => {
-            let unit = |first: i32| {
-                let second = input_getc(handle);
-                if mode == UTF16BE {
+        Encoding::Utf16Be | Encoding::Utf16Le => {
+            let unit = |f: &mut InputFile, env: &mut EngineEnv, first: i32| {
+                let second = f.getc(env);
+                if encoding == Encoding::Utf16Be {
                     (first << 8) + second
                 } else {
                     first + (second << 8)
                 }
             };
-            let mut rval = input_getc(handle);
+            let mut rval = f.getc(env);
             if rval != EOF {
-                rval = unit(rval);
+                rval = unit(f, env, rval);
                 if (0xd800..=0xdbff).contains(&rval) {
-                    let lo = unit(input_getc(handle));
+                    let first = f.getc(env);
+                    let lo = unit(f, env, first);
                     if (0xdc00..=0xdfff).contains(&lo) {
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
                         rval = 0xfffd;
-                        f.saved_char = i64::from(lo);
+                        f.saved = Some(lo);
                     }
                 } else if (0xdc00..=0xdfff).contains(&rval) {
                     rval = 0xfffd;
@@ -628,34 +517,17 @@ pub(crate) fn get_uni_c(
             rval
         }
 
-        RAW => input_getc(handle),
-
-        _ => return Err(InvalidInputMode),
-    };
-
-    Ok(rval)
+        Encoding::Raw => f.getc(env),
+    }
 }
 
-/// Closes an input slot. Returns `true` on a serious internal close error, in
-/// which case the converter and the file are leaked like the old abort did.
+/// Closes an input slot. Returns `true` on a serious internal close error.
 #[must_use]
-pub fn u_close(slot: InputSlot) -> bool {
-    let InputSlot::Open(f) = slot else {
-        return false;
-    };
-
-    if f.handle == INVALID_HANDLE {
-        mem::forget(f);
-        return false;
+pub fn u_close(env: &mut EngineEnv, slot: InputSlot) -> bool {
+    match slot {
+        InputSlot::Open(f) => f.close(env),
+        InputSlot::Empty | InputSlot::Terminal => false,
     }
-
-    if input_close(f.handle) {
-        mem::forget(f);
-        return true;
-    }
-
-    drop(f);
-    false
 }
 
 /// Runs `path` back through the name scanner, giving the name of the file actually opened.
@@ -672,12 +544,16 @@ fn utf16_units(mut path: &[u8]) -> Vec<u16> {
     units
 }
 
-pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abort> {
-    let n = usize::try_from(scan_four_bit_int(st)?).unwrap_or(0);
+pub(crate) fn open_or_close(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    open: bool,
+) -> Result<(), Abort> {
+    let n = usize::try_from(scan_four_bit_int(st, env)?).unwrap_or(0);
 
     if st.input.read_open[n] != CLOSED {
         let slot = mem::take(&mut st.input.read_file[n]);
-        if u_close(slot) {
+        if u_close(env, slot) {
             return Err(Abort::InputClose);
         }
         st.input.read_open[n] = CLOSED;
@@ -687,12 +563,12 @@ pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abor
         return Ok(());
     }
 
-    scan_optional_equals(st)?;
-    let path = scan_name_path(st)?;
+    scan_optional_equals(st, env)?;
+    let path = scan_name_path(st, env)?;
 
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
-    if let Some((file, _)) = u_open_in(st, &path, FileFormat::Tex, mode, encoding)? {
+    if let Some((file, _)) = u_open_in(st, env, &path, FileFormat::Tex, mode, encoding)? {
         st.input.read_file[n] = InputSlot::Open(file);
         rescan_opened_name(st, &path)?;
         st.input.read_open[n] = JUST_OPEN;
@@ -724,19 +600,19 @@ impl FileName {
 }
 
 impl TexPrint for FileName {
-    fn print_to(&self, st: &mut EngineState) {
-        print_file_name(st, self.name, self.area, self.ext);
+    fn print_to(&self, st: &mut EngineState, env: &mut EngineEnv) {
+        print_file_name(st, env, self.name, self.area, self.ext);
     }
 }
 
 /// Whether TeX may write `\openout` file `path`: kpathsea's default `openout_any = p` refuses
 /// absolute names, `..` steps and names starting with a dot, and the directory must exist.
-pub(crate) fn may_write(path: &[u8]) -> bool {
+pub(crate) fn may_write(env: &mut EngineEnv, path: &[u8]) -> bool {
     if !stays_in_output_dir(path) {
         return false;
     }
     match path.iter().rposition(|&b| b == b'/') {
-        Some(slash) => directory_exists(&path[..slash]),
+        Some(slash) => env.directory_exists(&path[..slash]),
         None => true,
     }
 }
@@ -911,7 +787,7 @@ pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<Vec<u8>, Ab
     Ok(file.path(&st.strings))
 }
 
-pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn open_log_file(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let old_setting = st.shipout.selector;
     if st.strings.job_name == StrNumber::NONE {
         st.strings.job_name = st.strings.make_tex_string("texput")?;
@@ -919,11 +795,9 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 
     let log_path = pack_job_name(st, ".log")?;
 
-    let handle = output_open(&log_path, false);
-    if handle == INVALID_HANDLE {
+    if !env.open_log(&log_path) {
         return Err(Abort::Internal("cannot open log file output"));
     }
-    st.shipout.log_file = handle;
     st.shipout.log_bytes = 0;
     st.shipout.log_resumed_at = None;
 
@@ -933,78 +807,78 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 
     st.input.input_stack.park(st.input.cur_input);
 
-    print_nl(st, "**");
+    print_nl(st, env, "**");
     let mut l = st.input.input_stack[0].limit;
     if st.input.buffer[l] == st.eqtb.int_par(IntPar::EndLineChar) {
         l -= 1;
     }
     for k in BufPos::from_raw(1).until(l + 1) {
-        print(st, StrNumber::single_char(st.input.buffer[k]));
+        print(st, env, StrNumber::single_char(st.input.buffer[k]));
     }
 
-    print_ln(st);
+    print_ln(st, env);
     st.shipout.selector = old_setting.with_log();
     Ok(())
 }
 
-/// Recreates bridge-owned output handles after restoring a resident checkpoint.
-///
-/// Checkpoints keep the logical output state, but bridge handles and
-/// diagnostic pointers are valid only for the operation that created them.
-pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
+/// Reopens the files a restored resident checkpoint writes to. Checkpoints keep
+/// what was written, the env holds the open files of one operation.
+pub(crate) fn reopen_resident_outputs(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     st.diagnostics.resume_after(st.shipout.diagnostics_issued);
-    st.shipout.write_file = [INVALID_HANDLE; 16];
-    st.shipout.log_file = INVALID_HANDLE;
-    st.shipout.dvi.file = INVALID_HANDLE;
+    env.discard_files();
 
     if st.errors.log_opened {
         let log_path = pack_job_name(st, ".log")?;
-        let handle = output_open(&log_path, false);
-        if handle == INVALID_HANDLE {
+        if !env.open_log(&log_path) {
             return Err(Abort::Internal("cannot reopen log file output"));
         }
-        st.shipout.log_file = handle;
         st.shipout.log_resumed_at = Some(st.shipout.log_bytes);
     }
 
     if st.shipout.output_file_name != StrNumber::NONE {
         let dvi_path = pack_job_name(st, output_file_extension(st))?;
-        let handle = output_open(&dvi_path, false);
-        if handle == INVALID_HANDLE {
+        if !env.open_xdv(&dvi_path) {
             return Err(Abort::Internal("cannot reopen XDV file output"));
         }
-        st.shipout.dvi.file = handle;
     }
 
     Ok(())
 }
 
-pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn close_files_and_terminate(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
-            ensure_write_stream_open(st, k)?;
-            output_close(st.shipout.write_file[k]);
+            ensure_write_stream_open(st, env, k)?;
+            if let Some(stream) = WriteStream::new(k) {
+                env.close_write(stream);
+            }
         }
     }
 
     // Routed through the journaling setter so a rewind restores `\newlinechar`.
     st.eqtb.set_int_par(IntPar::NewLineChar, -1);
 
-    finalize_dvi_file(st)?;
-    synctex_terminate(st);
+    finalize_dvi_file(st, env)?;
+    synctex_terminate(st, env);
 
     if st.errors.log_opened {
-        log_putc(st, b'\n');
-        output_close(st.shipout.log_file);
+        log_putc(st, env, b'\n');
+        env.close_log();
         st.shipout.selector = st.shipout.selector.without_log();
         if st.shipout.selector == Selector::TermOnly {
-            print_nl(st, "Transcript written on ");
-            print(st, st.strings.texmf_log_name);
-            print_char(st, b'.');
+            print_nl(st, env, "Transcript written on ");
+            print(st, env, st.strings.texmf_log_name);
+            print_char(st, env, b'.');
         }
     }
 
-    print_ln(st);
+    print_ln(st, env);
     Ok(())
 }
 
@@ -1018,23 +892,23 @@ pub fn init_io(st: &mut EngineState) {
     st.input.first = first + 1;
 }
 
-pub(crate) fn scan_name_path(st: &mut EngineState) -> Result<Vec<u8>, Abort> {
-    Ok(scan_file_name(st)?.file.path(&st.strings))
+pub(crate) fn scan_name_path(st: &mut EngineState, env: &mut EngineEnv) -> Result<Vec<u8>, Abort> {
+    Ok(scan_file_name(st, env)?.file.path(&st.strings))
 }
 
-fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
+fn scan_file_name_braced(st: &mut EngineState, env: &mut EngineEnv) -> Result<NameScan, Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_def_ref = st.scanner.def_ref;
     let save_cur_cs = st.scanner.cur_cs;
 
     st.scanner.cur_cs = st.scanner.warning_index;
-    scan_toks(st, false, true)?;
+    scan_toks(st, env, false, true)?;
 
     st.shipout.old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     let arg = st.mem.tokens.cursor(st.scanner.def_ref);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    show_token_list(st, arg, TokCursor::END, l);
+    show_token_list(st, env, arg, TokCursor::END, l);
     st.shipout.selector = st.shipout.old_setting;
 
     let s = st.strings.make_string()?;
@@ -1051,12 +925,15 @@ fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
     Ok(scan)
 }
 
-pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort> {
+pub(crate) fn scan_file_name(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<ScannedName, Abort> {
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
 
     loop {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
         if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
             break;
         }
@@ -1065,13 +942,13 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
     back_input(st)?;
 
     let scan = if st.scanner.cur.cmd() == Cmd::LeftBrace {
-        scan_file_name_braced(st)?
+        scan_file_name_braced(st, env)?
     } else {
         st.scanner.name_in_progress = true;
         let mut scan = NameScan::begin_name(true);
 
         loop {
-            get_x_token(st)?;
+            get_x_token(st, env)?;
             if st.scanner.cur.cmd() != Cmd::Spacer {
                 break;
             }
@@ -1091,7 +968,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
                 break;
             }
 
-            get_x_token(st)?;
+            get_x_token(st, env)?;
         }
         scan
     };
@@ -1104,6 +981,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
 
 pub(crate) fn start_input(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     primary_input_name: Option<&str>,
 ) -> Result<(), Abort> {
     let format = if primary_input_name.is_none() {
@@ -1120,7 +998,7 @@ pub(crate) fn start_input(
         let chars = iter::from_fn(|| (!name.is_empty()).then(|| next_utf8_char(&mut name)));
         scan_whole_name(st, chars)?
     } else {
-        scan_file_name(st)?.file
+        scan_file_name(st, env)?.file
     };
 
     if primary_input_name.is_some() {
@@ -1133,9 +1011,9 @@ pub(crate) fn start_input(
     let idx = i32::from(st.input.cur_input.index);
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
-    let Some((file, found)) = u_open_in(st, &path, format, mode, encoding)? else {
-        end_file_reading(st)?;
-        return Err(prompt_file_name(st, FilePrompt::Input, scanned, &path));
+    let Some((file, found)) = u_open_in(st, env, &path, format, mode, encoding)? else {
+        end_file_reading(st, env)?;
+        return Err(prompt_file_name(st, env, FilePrompt::Input, scanned, &path));
     };
     st.input.input_file[idx as usize] = InputSlot::Open(file);
 
@@ -1158,43 +1036,43 @@ pub(crate) fn start_input(
 
     if st.strings.job_name == StrNumber::NONE {
         st.strings.job_name = opened.name;
-        open_log_file(st)?;
+        open_log_file(st, env)?;
     }
 
     if st.shipout.term_offset + st.strings.length(full_name) > st.config.max_print_line - 2 {
-        print_ln(st);
+        print_ln(st, env);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        print_char(st, b' ');
+        print_char(st, env, b' ');
     }
-    print_char(st, b'(');
+    print_char(st, env, b'(');
     st.input.open_parens += 1;
-    print(st, full_name);
-    output_flush(st.shipout.rust_stdout);
+    print(st, env, full_name);
+    env.flush_terminal();
 
     let tracing_stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if tracing_stack_levels > 0 {
         begin_diagnostic(st);
-        print_ln(st);
-        print_char(st, b'~');
+        print_ln(st, env);
+        print_char(st, env, b'~');
         let v = st.input.input_depth() - 1;
         if v < tracing_stack_levels {
             for _ in 0..v {
-                print_char(st, b'.');
+                print_char(st, env, b'.');
             }
         } else {
-            print_char(st, b'~');
+            print_char(st, env, b'~');
         }
-        print(st, "INPUT ");
-        print(st, (opened.name, opened.ext));
-        print_ln(st);
-        end_diagnostic(st, false);
+        print(st, env, "INPUT ");
+        print(st, env, (opened.name, opened.ext));
+        print_ln(st, env);
+        end_diagnostic(st, env, false);
     }
 
     st.input.cur_input.state = NEW_LINE;
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
-    synctex_start_input(st, &job_name, &found.abspath);
+    synctex_start_input(st, env, &job_name, &found.abspath);
     st.mem.line = 1;
-    input_slot_line(st, FileSlot::Input(idx as usize))?;
+    input_slot_line(st, env, FileSlot::Input(idx as usize))?;
     st.input.cur_input.limit = st.input.last;
     finish_line(st);
     Ok(())

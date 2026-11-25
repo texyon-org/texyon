@@ -610,6 +610,68 @@ impl<P: IoProvider + ?Sized> IoProvider for Box<P> {
     }
 }
 
+impl<P: IoProvider + ?Sized> IoProvider for &mut P {
+    fn output_open_name(&mut self, name: &str) -> OpenResult<OutputHandle> {
+        (**self).output_open_name(name)
+    }
+
+    fn output_open_stdout(&mut self) -> OpenResult<OutputHandle> {
+        (**self).output_open_stdout()
+    }
+
+    fn input_open_name(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<InputHandle> {
+        (**self).input_open_name(name, status)
+    }
+
+    fn input_open_name_with_abspath(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+        (**self).input_open_name_with_abspath(name, status)
+    }
+
+    fn input_open_primary(&mut self, status: &mut dyn StatusBackend) -> OpenResult<InputHandle> {
+        (**self).input_open_primary(status)
+    }
+
+    fn input_open_primary_with_abspath(
+        &mut self,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+        (**self).input_open_primary_with_abspath(status)
+    }
+
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        (**self).input_casefold_name(name)
+    }
+
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        (**self).directory_exists(dir)
+    }
+
+    fn input_open_format(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<InputHandle> {
+        (**self).input_open_format(name, status)
+    }
+
+    fn write_format(
+        &mut self,
+        name: &str,
+        data: &[u8],
+        status: &mut dyn StatusBackend,
+    ) -> Result<()> {
+        (**self).write_format(name, data, status)
+    }
+}
+
 // Some generically helpful InputFeatures impls
 
 impl InputFeatures for Cursor<Vec<u8>> {

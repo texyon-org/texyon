@@ -31,12 +31,17 @@
 //! implements the [`DriverHooks`] trait. The [`MinimalDriver`] struct provides
 //! a minimal implementation that only requires you to provide an [`IoProvider`]
 //! implementation.
+//!
+//! The services themselves live in [`BridgeHost`]: hooks, status and settings,
+//! with lookups that hand out owned handles. A Rust engine can keep a host for
+//! as long as it likes, owning it ([`Held::Owned`]) or borrowing a launcher's
+//! ([`CoreBridgeLauncher::host`]). A [`CoreBridgeState`] is a host plus the id
+//! tables C code needs, and borrows its host for as long as the C code runs.
 
 use flate2::{Compression, GzBuilder, read::GzDecoder};
 use md5::{Digest, Md5};
 use std::num::NonZeroUsize;
 use std::{
-    convert::TryInto,
     ffi::{CStr, CString},
     fmt::{Display, Error as FmtError, Formatter},
     io::{self, Read, SeekFrom, Write},
@@ -228,7 +233,7 @@ unsafe extern "C" {
     fn _ttbc_get_error_message() -> *const libc::c_char;
     fn _ttbc_set_error_message(message: *const libc::c_char);
     #[allow(improper_ctypes)]
-    fn ttbc_global_engine_enter(api: *mut CoreBridgeState<'_>) -> *mut libc::c_void;
+    fn ttbc_global_engine_enter(api: *mut CoreBridgeState<'_, '_>) -> *mut libc::c_void;
     fn ttbc_global_engine_exit();
 }
 
@@ -283,7 +288,8 @@ impl EngineAbortedError {
         }
     }
 
-    fn new_with_details() -> Self {
+    /// The error with the message the engine's abort left.
+    pub fn new_with_details() -> Self {
         // SAFETY: This is always safe to call
         let ptr = unsafe { _ttbc_get_error_message() };
         // SAFETY: The pointer returned above will always have a null-terminated C-string in it
@@ -301,6 +307,34 @@ impl Display for EngineAbortedError {
 }
 
 impl std::error::Error for EngineAbortedError {}
+
+/// A value a [`BridgeHost`] either borrows for a run or owns for a session.
+pub enum Held<'h, T: ?Sized> {
+    /// Lent by the caller for the host's lifetime.
+    Borrowed(&'h mut T),
+    /// Owned by the host.
+    Owned(Box<T>),
+}
+
+impl<T: ?Sized> std::ops::Deref for Held<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        match self {
+            Held::Borrowed(value) => value,
+            Held::Owned(value) => value,
+        }
+    }
+}
+
+impl<T: ?Sized> std::ops::DerefMut for Held<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        match self {
+            Held::Borrowed(value) => value,
+            Held::Owned(value) => value,
+        }
+    }
+}
 
 /// A mechanism for launching bridged FFI code.
 pub struct CoreBridgeLauncher<'a> {
@@ -350,6 +384,17 @@ impl<'a> CoreBridgeLauncher<'a> {
         self
     }
 
+    /// A host over this launcher's hooks and status, for engines that keep
+    /// their own state instead of running in [`Self::with_global_lock`].
+    pub fn host(&mut self) -> BridgeHost<'_> {
+        BridgeHost {
+            hooks: Held::Borrowed(&mut *self.hooks),
+            status: Held::Borrowed(&mut *self.status),
+            security: self.security.clone(),
+            fs_emulation_settings: self.filesystem_emulation_settings.clone(),
+        }
+    }
+
     /// Invoke a function to launch a bridged FFI engine with a global mutex
     /// held.
     ///
@@ -365,15 +410,11 @@ impl<'a> CoreBridgeLauncher<'a> {
     /// should return `Err(EngineAbortedError::new_abort_indicator())`.
     pub fn with_global_lock<F, T>(&mut self, callback: F) -> Result<T>
     where
-        F: FnOnce(&mut CoreBridgeState<'_>) -> Result<T>,
+        F: FnOnce(&mut CoreBridgeState<'_, '_>) -> Result<T>,
     {
-        let _guard = ENGINE_LOCK.lock().unwrap();
-        let mut state = CoreBridgeState::new(
-            self.security.clone(),
-            self.hooks,
-            self.status,
-            self.filesystem_emulation_settings.clone(),
-        );
+        let _guard = engine_lock();
+        let mut host = self.host();
+        let mut state = CoreBridgeState::new(&mut host);
         let result = callback(&mut state);
 
         if let Err(ref e) = result
@@ -386,39 +427,34 @@ impl<'a> CoreBridgeLauncher<'a> {
     }
 }
 
+/// Holds the lock every engine run takes, since the C engines keep global state.
+pub fn engine_lock() -> std::sync::MutexGuard<'static, u8> {
+    ENGINE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// What engines reach the outside world through: the driver's I/O and events,
+/// status reporting, and the security and filesystem-emulation settings.
+pub struct BridgeHost<'h> {
+    hooks: Held<'h, dyn DriverHooks + 'h>,
+    status: Held<'h, dyn StatusBackend + 'h>,
+    security: SecuritySettings,
+    fs_emulation_settings: FsEmulationSettings,
+}
+
 /// The CoreBridgeState structure is a handle to Rust state that can be used by
 /// C/C++ engine code to perform basic I/O functions.
 ///
 /// Code that invokes a Tectonic C/C++ engine should pass a pointer to one of
 /// these state structures into the C/C++ layer. It is essential that lifetimes
 /// be properly managed across the Rust/C boundary.
-pub struct CoreBridgeState<'a> {
-    /// The security settings for this invocation
-    security: SecuritySettings,
+pub struct CoreBridgeState<'a, 'h> {
+    host: &'a mut BridgeHost<'h>,
 
-    /// The filesystem emulation settings for this invocation.
-    fs_emulation_settings: FsEmulationSettings,
-
-    /// The driver hooks associated with this engine invocation.
-    hooks: &'a mut dyn DriverHooks,
-
-    /// The status-reporting backend associated with this engine invocation.
-    status: &'a mut dyn StatusBackend,
-
-    #[allow(clippy::vec_box)]
     input_handles: Vec<Option<InputHandle>>,
 
-    #[allow(clippy::vec_box)]
     output_handles: Vec<Option<OutputHandle>>,
-
-    /// A semi-hack to allow us to feed input file path information to SyncTeX.
-    /// This field is updated every time a new input file is opened. The XeTeX
-    /// engine queries it when opening new source input files to get the
-    /// absolute filesystem path info that SyncTeX wants. This field might be
-    /// None because we're still reading the primary input, or because the most
-    /// recent input didn't have a filesystem path (it came from a bundle or
-    /// memory or something else).
-    latest_input_path: Option<PathBuf>,
 
     /// How [`CoreBridgeState::input_open`] found the latest input.
     latest_input_found: FoundAs,
@@ -447,11 +483,14 @@ impl FoundAs {
     }
 }
 
-/// An input found by [`CoreBridgeState::input_open_name_format`].
-struct OpenedInput {
-    handle: InputHandle,
-    path: Option<PathBuf>,
-    found: FoundAs,
+/// An input opened by a [`BridgeHost`].
+pub struct OpenedInput {
+    /// The open file.
+    pub handle: InputHandle,
+    /// Its filesystem path, if it has one.
+    pub path: Option<PathBuf>,
+    /// How its name relates to the one asked for.
+    pub found: FoundAs,
 }
 
 impl OpenedInput {
@@ -471,32 +510,29 @@ impl OpenedInput {
     }
 }
 
-impl<'a> CoreBridgeState<'a> {
-    fn new(
+impl<'h> BridgeHost<'h> {
+    /// A host over `hooks` and `status` with the default filesystem emulation.
+    pub fn new(
+        hooks: Held<'h, dyn DriverHooks + 'h>,
+        status: Held<'h, dyn StatusBackend + 'h>,
         security: SecuritySettings,
-        hooks: &'a mut dyn DriverHooks,
-        status: &'a mut dyn StatusBackend,
-        fs_emulation_settings: FsEmulationSettings,
-    ) -> CoreBridgeState<'a> {
-        CoreBridgeState {
-            security,
+    ) -> Self {
+        BridgeHost {
             hooks,
             status,
-            output_handles: Vec::new(),
-            input_handles: Vec::new(),
-            latest_input_path: None,
-            latest_input_found: FoundAs::Asked,
-            fs_emulation_settings,
+            security,
+            fs_emulation_settings: FsEmulationSettings::default(),
         }
     }
 
-    /// Makes this state the one C support code reaches through the `ttstub_*`
-    /// functions until the guard drops. Rust engines need this only around
-    /// calls into C code that does I/O.
-    pub fn enter_global_engine(&mut self) -> GlobalEngineGuard<'_> {
-        // SAFETY: the guard holds the exclusive borrow while C may use the pointer.
-        unsafe { ttbc_global_engine_enter(self) };
-        GlobalEngineGuard(PhantomData)
+    /// The driver hooks.
+    pub fn hooks(&mut self) -> &mut (dyn DriverHooks + 'h) {
+        &mut *self.hooks
+    }
+
+    /// The status backend.
+    pub fn status(&mut self) -> &mut (dyn StatusBackend + 'h) {
+        &mut *self.status
     }
 
     /// Issue a warning.
@@ -515,18 +551,13 @@ impl<'a> CoreBridgeState<'a> {
             .report(diag.kind, format_args!("{}", diag.message), None);
     }
 
-    /// How the latest input was found.
-    pub fn latest_input_found(&self) -> &FoundAs {
-        &self.latest_input_found
-    }
-
-    /// The filesystem path of the most recently opened input, if it is known,
-    /// exposed and UTF-8.
-    pub fn latest_input_abspath(&self) -> Option<&str> {
+    /// `path` as engines may see it: `None` unless absolute paths are exposed
+    /// and it is UTF-8.
+    pub fn exposed_path<'p>(&self, path: Option<&'p std::path::Path>) -> Option<&'p str> {
         if !self.fs_emulation_settings.expose_absolute_paths {
             return None;
         }
-        self.latest_input_path.as_ref()?.to_str()
+        path?.to_str()
     }
 
     fn input_open_name_format(
@@ -535,6 +566,7 @@ impl<'a> CoreBridgeState<'a> {
         format: FileFormat,
     ) -> OpenResult<OpenedInput> {
         let io = self.hooks.io();
+        let status = &mut *self.status;
 
         let open = |io: &mut dyn IoProvider, name: &str, status: &mut dyn StatusBackend| {
             if let FileFormat::Format = format {
@@ -553,7 +585,7 @@ impl<'a> CoreBridgeState<'a> {
         let mut first_error = None;
         let candidates = format.candidates(name);
         for (candidate, found) in &candidates {
-            match open(io, candidate, self.status) {
+            match open(io, candidate, status) {
                 OpenResult::NotAvailable => {}
                 OpenResult::Err(e) => {
                     first_error.get_or_insert(e);
@@ -567,7 +599,7 @@ impl<'a> CoreBridgeState<'a> {
             let Some(folded) = io.input_casefold_name(candidate) else {
                 continue;
             };
-            match open(io, &folded, self.status) {
+            match open(io, &folded, status) {
                 OpenResult::NotAvailable => {}
                 OpenResult::Err(e) => {
                     first_error.get_or_insert(e);
@@ -613,20 +645,10 @@ impl<'a> CoreBridgeState<'a> {
         let name = normalize_tex_path(name);
         let mut hash = Md5::default();
 
-        // We could try to be fancy and look up the file in our cache to see
-        // if we've already computed is SHA256 ... and then lie and use a
-        // truncated SHA256 digest as the MD5 ... but it seems like a better
-        // idea to just go and read the file.
-
         let mut ih = match self.input_open_name_format(&name, FileFormat::Tex) {
             OpenResult::Ok(opened) => opened.handle,
-            OpenResult::NotAvailable => {
-                // We could issue a warning here, but the standard LaTeX
-                // "rerun check" implementations trigger it very often, which
-                // gets annoying. So we'll let this particular failure mode be
-                // silent.
-                return true;
-            }
+            // LaTeX's rerun checks ask for missing files all the time, so stay silent.
+            OpenResult::NotAvailable => return true,
             OpenResult::Err(e) => {
                 tt_error!(self.status, "error trying to open file \"{}\" for MD5 calculation",
                           name; e);
@@ -634,17 +656,12 @@ impl<'a> CoreBridgeState<'a> {
             }
         };
 
-        // No canned way to stream the whole file into the digest, it seems.
-
-        const BUF_SIZE: usize = 1024;
-        let mut buf = [0u8; BUF_SIZE];
+        let mut buf = [0u8; 1024];
         let mut error_occurred = false;
 
         loop {
             let nread = match ih.read(&mut buf) {
-                Ok(0) => {
-                    break;
-                }
+                Ok(0) => break,
                 Ok(n) => n,
                 Err(e) => {
                     tt_error!(self.status, "error reading file \"{}\" for MD5 calculation",
@@ -656,10 +673,9 @@ impl<'a> CoreBridgeState<'a> {
             hash.update(&buf[..nread]);
         }
 
-        // Clean up.
-
         let (name, digest_opt) = ih.into_name_digest();
-        self.hooks.event_input_closed(name, digest_opt, self.status);
+        self.hooks
+            .event_input_closed(name, digest_opt, &mut *self.status);
 
         if !error_occurred {
             let result = hash.finalize();
@@ -669,22 +685,16 @@ impl<'a> CoreBridgeState<'a> {
         error_occurred
     }
 
-    /// Get a mutable reference to an [`OutputHandle`] associated with an [`OutputId`]
-    pub fn get_output(&mut self, id: OutputId) -> &mut OutputHandle {
-        self.output_handles[id.idx()].as_mut().unwrap()
-    }
-
     /// Whether directory `dir` of the document exists, so that a file can be created in it.
     pub fn directory_exists(&mut self, dir: &str) -> bool {
         self.hooks.io().directory_exists(dir)
     }
 
     /// Open a new output, provided the output name and whether it is gzipped.
-    pub fn output_open(&mut self, name: &str, is_gz: bool) -> Option<OutputId> {
-        let io = self.hooks.io();
+    pub fn open_output(&mut self, name: &str, is_gz: bool) -> Option<OutputHandle> {
         let name = normalize_tex_path(name);
 
-        let mut oh = match io.output_open_name(&name) {
+        let mut oh = match self.hooks.io().output_open_name(&name) {
             OpenResult::Ok(oh) => oh,
             OpenResult::NotAvailable => return None,
             OpenResult::Err(e) => {
@@ -701,33 +711,24 @@ impl<'a> CoreBridgeState<'a> {
             );
         }
 
-        self.output_handles.push(Some(oh));
-        OutputId::new(self.output_handles.len())
+        Some(oh)
     }
 
-    /// Open a new stdout output.
-    pub fn output_open_stdout(&mut self) -> Option<OutputId> {
-        let io = self.hooks.io();
-
-        let oh = match io.output_open_stdout() {
-            OpenResult::Ok(oh) => oh,
-            OpenResult::NotAvailable => return None,
+    /// Open the terminal output.
+    pub fn open_stdout(&mut self) -> Option<OutputHandle> {
+        match self.hooks.io().output_open_stdout() {
+            OpenResult::Ok(oh) => Some(oh),
+            OpenResult::NotAvailable => None,
             OpenResult::Err(e) => {
                 tt_warning!(self.status, "open of stdout failed"; e);
-                return None;
+                None
             }
-        };
-
-        self.output_handles.push(Some(oh));
-        OutputId::new(self.output_handles.len())
+        }
     }
 
     /// Write to an output, returning true on failure.
-    pub fn output_write(&mut self, handle: OutputId, buf: &[u8]) -> bool {
-        let rhandle: &mut OutputHandle = self.get_output(handle);
-        let result = rhandle.write_all(buf);
-
-        match result {
+    pub fn write_output(&mut self, handle: &mut OutputHandle, buf: &[u8]) -> bool {
+        match handle.write_all(buf) {
             Ok(_) => false,
             Err(e) => {
                 tt_warning!(self.status, "write failed"; e.into());
@@ -737,11 +738,8 @@ impl<'a> CoreBridgeState<'a> {
     }
 
     /// Flush an output, returning true on failure.
-    pub fn output_flush(&mut self, handle: OutputId) -> bool {
-        let rhandle: &mut OutputHandle = self.get_output(handle);
-        let result = rhandle.flush();
-
-        match result {
+    pub fn flush_output(&mut self, handle: &mut OutputHandle) -> bool {
+        match handle.flush() {
             Ok(_) => false,
             Err(e) => {
                 tt_warning!(self.status, "flush failed"; e.into());
@@ -750,72 +748,63 @@ impl<'a> CoreBridgeState<'a> {
         }
     }
 
-    /// Close the provided output, flushing it and performing any necessary handling.
-    pub fn output_close(&mut self, id: OutputId) -> bool {
+    /// Close an output, flushing it and reporting its digest. Returns true on failure.
+    pub fn close_output(&mut self, mut handle: OutputHandle) -> bool {
         let mut rv = false;
-        let mut oh = self.output_handles[id.idx()].take().unwrap();
-        if let Err(e) = oh.flush() {
-            tt_warning!(self.status, "error when closing output {}", oh.name(); e.into());
+        if let Err(e) = handle.flush() {
+            tt_warning!(self.status, "error when closing output {}", handle.name(); e.into());
             rv = true;
         }
-        let (name, digest) = oh.into_name_digest();
+        let (name, digest) = handle.into_name_digest();
         self.hooks.event_output_closed(name, digest);
         rv
     }
 
-    /// Get a mutable reference to an [`InputHandle`] associated with an [`InputId`]
-    pub fn get_input(&mut self, input: InputId) -> &mut InputHandle {
-        self.input_handles[input.idx()].as_mut().unwrap()
-    }
-
-    /// Open a new input, provided the input name, the file format, and whether it is gzipped.
-    pub fn input_open(&mut self, name: &str, format: FileFormat, is_gz: bool) -> Option<InputId> {
+    /// Open an input, provided its name, the file format, and whether it is gzipped.
+    pub fn open_input(
+        &mut self,
+        name: &str,
+        format: FileFormat,
+        is_gz: bool,
+    ) -> Option<OpenedInput> {
         let name = normalize_tex_path(name);
 
-        let opened = match self.input_open_name_format_gz(&name, format, is_gz) {
-            OpenResult::Ok(opened) => opened,
-            OpenResult::NotAvailable => {
-                return None;
-            }
+        match self.input_open_name_format_gz(&name, format, is_gz) {
+            OpenResult::Ok(opened) => Some(opened),
+            OpenResult::NotAvailable => None,
             OpenResult::Err(e) => {
                 tt_warning!(self.status, "open of input {} failed", name; e);
-                return None;
+                None
             }
-        };
-
-        self.input_handles.push(Some(opened.handle));
-        self.latest_input_path = opened.path;
-        self.latest_input_found = opened.found;
-        InputId::new(self.input_handles.len())
+        }
     }
 
     /// Open the primary input.
-    pub fn input_open_primary(&mut self) -> Option<InputId> {
-        let io = self.hooks.io();
-
-        let (ih, path) = match io.input_open_primary_with_abspath(self.status) {
-            OpenResult::Ok(tup) => tup,
+    pub fn open_primary_input(&mut self) -> Option<OpenedInput> {
+        match self
+            .hooks
+            .io()
+            .input_open_primary_with_abspath(&mut *self.status)
+        {
+            OpenResult::Ok((handle, path)) => Some(OpenedInput {
+                handle,
+                path,
+                found: FoundAs::Asked,
+            }),
             OpenResult::NotAvailable => {
                 tt_error!(self.status, "primary input not available (?!)");
-                return None;
+                None
             }
             OpenResult::Err(e) => {
                 tt_error!(self.status, "open of primary input failed"; e);
-                return None;
+                None
             }
-        };
-
-        self.input_handles.push(Some(ih));
-        self.latest_input_path = path;
-        self.latest_input_found = FoundAs::Asked;
-        InputId::new(self.input_handles.len())
+        }
     }
 
-    /// Get the size of an input. Prints a warning and returns 0 on error
-    pub fn input_get_size(&mut self, handle: InputId) -> usize {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-
-        match rhandle.get_size() {
+    /// The size of an input, or 0 after reporting a failure.
+    pub fn input_size(&mut self, handle: &mut InputHandle) -> usize {
+        match handle.get_size() {
             Ok(s) => s,
             Err(e) => {
                 tt_warning!(self.status, "failed to get the size of an input"; e);
@@ -824,28 +813,24 @@ impl<'a> CoreBridgeState<'a> {
         }
     }
 
-    /// Get the modification time of an input.
-    pub fn input_get_mtime(&mut self, handle: InputId) -> i64 {
+    /// The modification time of an input.
+    pub fn input_mtime(&mut self, handle: &mut InputHandle) -> i64 {
         if let Some(mtime) = self.fs_emulation_settings.mtime_override {
             return mtime;
         }
-        let rhandle: &mut InputHandle = self.get_input(handle);
-
-        let maybe_time = match rhandle.get_unix_mtime() {
+        let maybe_time = match handle.get_unix_mtime() {
             Ok(t) => t,
             Err(e) => {
                 tt_warning!(self.status, "failed to get the modification time of an input"; e);
                 Some(0)
             }
         };
-
         maybe_time.unwrap_or(1)
     }
 
     /// Seek in an input, returning the new position, or 0 after reporting a failure.
-    pub fn input_seek(&mut self, handle: InputId, pos: SeekFrom) -> u64 {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-        match rhandle.try_seek(pos) {
+    pub fn seek_input(&mut self, handle: &mut InputHandle, pos: SeekFrom) -> u64 {
+        match handle.try_seek(pos) {
             Ok(pos) => pos,
             Err(e) => {
                 tt_error!(self.status, "input seek failed"; e);
@@ -855,70 +840,46 @@ impl<'a> CoreBridgeState<'a> {
     }
 
     /// Fill `buf` from an input, reporting a failure as a warning.
-    pub fn input_read(&mut self, handle: InputId, buf: &mut [u8]) -> Result<()> {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-        let result = rhandle.read_exact(buf).map_err(Error::from);
+    pub fn read_input(&mut self, handle: &mut InputHandle, buf: &mut [u8]) -> Result<()> {
+        let result = handle.read_exact(buf).map_err(Error::from);
         if let Err(e) = &result {
             tt_warning!(self.status, "{}-byte read failed", buf.len(); *e);
         }
         result
     }
 
-    fn input_read_partial(&mut self, handle: InputId, buf: &mut [u8]) -> Result<usize> {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-        rhandle.read(buf).map_err(Error::from)
-    }
-
-    /// Get one byte from an input, or `None` at its end or after reporting a failure.
-    pub fn input_getc(&mut self, handle: InputId) -> Option<u8> {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-        match rhandle.getc() {
-            Ok(b) => Some(b),
+    /// Read up to `buf.len()` bytes of an input. Returns 0 at its end or after
+    /// reporting a failure.
+    pub fn read_input_some(&mut self, handle: &mut InputHandle, buf: &mut [u8]) -> usize {
+        match handle.read(buf) {
+            Ok(n) => n,
             Err(e) => {
-                let eof = e
-                    .downcast_ref::<io::Error>()
-                    .is_some_and(|ioe| ioe.kind() == io::ErrorKind::UnexpectedEof);
-                if !eof {
-                    tt_warning!(self.status, "getc failed"; e);
-                }
-                None
+                tt_warning!(self.status, "read failed"; e.into());
+                0
             }
         }
     }
 
-    /// Put back a byte from [`Self::input_getc`], returning true after reporting a failure.
-    pub fn input_ungetc(&mut self, handle: InputId, byte: u8) -> bool {
-        let rhandle: &mut InputHandle = self.get_input(handle);
-        match rhandle.ungetc(byte) {
-            Ok(()) => false,
-            Err(e) => {
-                tt_warning!(self.status, "ungetc() failed"; e);
-                true
-            }
-        }
-    }
-
-    /// Close the provided output, performing any necessary handling.
-    pub fn input_close(&mut self, id: InputId) -> bool {
-        let mut ih = self.input_handles[id.idx()].take().unwrap();
+    /// Close an input, reporting its digest. Returns true on failure.
+    pub fn close_input(&mut self, mut handle: InputHandle) -> bool {
         let mut rv = false;
 
-        if let Err(e) = ih.scan_remainder() {
-            tt_warning!(self.status, "error closing out input {}", ih.name(); e);
+        if let Err(e) = handle.scan_remainder() {
+            tt_warning!(self.status, "error closing out input {}", handle.name(); e);
             rv = true;
         }
 
-        let (name, digest_opt) = ih.into_name_digest();
-        self.hooks.event_input_closed(name, digest_opt, self.status);
+        let (name, digest_opt) = handle.into_name_digest();
+        self.hooks
+            .event_input_closed(name, digest_opt, &mut *self.status);
         rv
     }
 
     /// Run a shell-escape command, returning true on failure.
     pub fn shell_escape(&mut self, command: &str) -> bool {
         if self.security.allow_shell_escape() {
-            match self.hooks.sysrq_shell_escape(command, self.status) {
+            match self.hooks.sysrq_shell_escape(command, &mut *self.status) {
                 Ok(_) => false,
-
                 Err(e) => {
                     tt_error!(
                         self.status,
@@ -937,6 +898,192 @@ impl<'a> CoreBridgeState<'a> {
             );
             true
         }
+    }
+}
+
+impl<'a, 'h> CoreBridgeState<'a, 'h> {
+    /// A state over `host` with no files open.
+    pub fn new(host: &'a mut BridgeHost<'h>) -> Self {
+        CoreBridgeState {
+            host,
+            output_handles: Vec::new(),
+            input_handles: Vec::new(),
+            latest_input_found: FoundAs::Asked,
+        }
+    }
+
+    /// The host this state reaches the outside world through.
+    pub fn host(&mut self) -> &mut BridgeHost<'h> {
+        self.host
+    }
+
+    /// Makes this state the one C support code reaches through the `ttstub_*`
+    /// functions until the guard drops. Rust engines need this only around
+    /// calls into C code that does I/O.
+    pub fn enter_global_engine(&mut self) -> GlobalEngineGuard<'_> {
+        // SAFETY: the guard holds the exclusive borrow while C may use the pointer.
+        unsafe { ttbc_global_engine_enter(self) };
+        GlobalEngineGuard(PhantomData)
+    }
+
+    /// Issue a warning.
+    pub fn issue_warning(&mut self, text: &str) {
+        self.host.issue_warning(text);
+    }
+
+    /// Issue an error.
+    pub fn issue_error(&mut self, text: &str) {
+        self.host.issue_error(text);
+    }
+
+    /// Report a finished diagnostic.
+    pub fn finish_diagnostic(&mut self, diag: Diagnostic) {
+        self.host.finish_diagnostic(diag);
+    }
+
+    /// How the latest input was found.
+    pub fn latest_input_found(&self) -> &FoundAs {
+        &self.latest_input_found
+    }
+
+    /// Write the MD5 digest of file `name` to `dest`, returning true on failure.
+    pub fn get_file_md5(&mut self, name: &str, dest: &mut [u8; 16]) -> bool {
+        self.host.get_file_md5(name, dest)
+    }
+
+    /// Get a mutable reference to an [`OutputHandle`] associated with an [`OutputId`]
+    pub fn get_output(&mut self, id: OutputId) -> &mut OutputHandle {
+        self.output_handles[id.idx()].as_mut().unwrap()
+    }
+
+    /// Whether directory `dir` of the document exists, so that a file can be created in it.
+    pub fn directory_exists(&mut self, dir: &str) -> bool {
+        self.host.directory_exists(dir)
+    }
+
+    fn push_output(&mut self, handle: Option<OutputHandle>) -> Option<OutputId> {
+        self.output_handles.push(Some(handle?));
+        OutputId::new(self.output_handles.len())
+    }
+
+    /// Open a new output, provided the output name and whether it is gzipped.
+    pub fn output_open(&mut self, name: &str, is_gz: bool) -> Option<OutputId> {
+        let handle = self.host.open_output(name, is_gz);
+        self.push_output(handle)
+    }
+
+    /// Open a new stdout output.
+    pub fn output_open_stdout(&mut self) -> Option<OutputId> {
+        let handle = self.host.open_stdout();
+        self.push_output(handle)
+    }
+
+    /// Write to an output, returning true on failure.
+    pub fn output_write(&mut self, id: OutputId, buf: &[u8]) -> bool {
+        let handle = self.output_handles[id.idx()].as_mut().unwrap();
+        self.host.write_output(handle, buf)
+    }
+
+    /// Flush an output, returning true on failure.
+    pub fn output_flush(&mut self, id: OutputId) -> bool {
+        let handle = self.output_handles[id.idx()].as_mut().unwrap();
+        self.host.flush_output(handle)
+    }
+
+    /// Close the provided output, flushing it and performing any necessary handling.
+    pub fn output_close(&mut self, id: OutputId) -> bool {
+        let handle = self.output_handles[id.idx()].take().unwrap();
+        self.host.close_output(handle)
+    }
+
+    /// Get a mutable reference to an [`InputHandle`] associated with an [`InputId`]
+    pub fn get_input(&mut self, input: InputId) -> &mut InputHandle {
+        self.input_handles[input.idx()].as_mut().unwrap()
+    }
+
+    fn push_input(&mut self, opened: Option<OpenedInput>) -> Option<InputId> {
+        let opened = opened?;
+        self.input_handles.push(Some(opened.handle));
+        self.latest_input_found = opened.found;
+        InputId::new(self.input_handles.len())
+    }
+
+    /// Open a new input, provided the input name, the file format, and whether it is gzipped.
+    pub fn input_open(&mut self, name: &str, format: FileFormat, is_gz: bool) -> Option<InputId> {
+        let opened = self.host.open_input(name, format, is_gz);
+        self.push_input(opened)
+    }
+
+    /// Open the primary input.
+    pub fn input_open_primary(&mut self) -> Option<InputId> {
+        let opened = self.host.open_primary_input();
+        self.push_input(opened)
+    }
+
+    /// Get the size of an input. Prints a warning and returns 0 on error
+    pub fn input_get_size(&mut self, id: InputId) -> usize {
+        let handle = self.input_handles[id.idx()].as_mut().unwrap();
+        self.host.input_size(handle)
+    }
+
+    /// Get the modification time of an input.
+    pub fn input_get_mtime(&mut self, id: InputId) -> i64 {
+        let handle = self.input_handles[id.idx()].as_mut().unwrap();
+        self.host.input_mtime(handle)
+    }
+
+    /// Seek in an input, returning the new position, or 0 after reporting a failure.
+    pub fn input_seek(&mut self, id: InputId, pos: SeekFrom) -> u64 {
+        let handle = self.input_handles[id.idx()].as_mut().unwrap();
+        self.host.seek_input(handle, pos)
+    }
+
+    /// Fill `buf` from an input, reporting a failure as a warning.
+    pub fn input_read(&mut self, id: InputId, buf: &mut [u8]) -> Result<()> {
+        let handle = self.input_handles[id.idx()].as_mut().unwrap();
+        self.host.read_input(handle, buf)
+    }
+
+    fn input_read_partial(&mut self, handle: InputId, buf: &mut [u8]) -> Result<usize> {
+        self.get_input(handle).read(buf).map_err(Error::from)
+    }
+
+    /// Get one byte from an input, or `None` at its end or after reporting a failure.
+    pub fn input_getc(&mut self, handle: InputId) -> Option<u8> {
+        match self.get_input(handle).getc() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                let eof = e
+                    .downcast_ref::<io::Error>()
+                    .is_some_and(|ioe| ioe.kind() == io::ErrorKind::UnexpectedEof);
+                if !eof {
+                    tt_warning!(self.host.status, "getc failed"; e);
+                }
+                None
+            }
+        }
+    }
+
+    /// Put back a byte from [`Self::input_getc`], returning true after reporting a failure.
+    pub fn input_ungetc(&mut self, handle: InputId, byte: u8) -> bool {
+        match self.get_input(handle).ungetc(byte) {
+            Ok(()) => false,
+            Err(e) => {
+                tt_warning!(self.host.status, "ungetc() failed"; e);
+                true
+            }
+        }
+    }
+
+    /// Close the provided input, performing any necessary handling.
+    pub fn input_close(&mut self, id: InputId) -> bool {
+        let handle = self.input_handles[id.idx()].take().unwrap();
+        self.host.close_input(handle)
+    }
+
+    /// Run a shell-escape command, returning true on failure.
+    pub fn shell_escape(&mut self, command: &str) -> bool {
+        self.host.shell_escape(command)
     }
 }
 
@@ -1067,59 +1214,6 @@ pub unsafe extern "C" fn ttbc_issue_warning(es: &mut CoreBridgeState, text: *con
     es.issue_warning(&text.to_string_lossy());
 }
 
-/// Issue an error.
-///
-/// # Safety
-///
-/// This function is unsafe because it accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_issue_error(es: &mut CoreBridgeState, text: *const libc::c_char) {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let text = unsafe { CStr::from_ptr(text) };
-    es.issue_error(&text.to_string_lossy());
-}
-
-/// Calculate the MD5 digest of a Tectonic file.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_file_md5(
-    es: &mut CoreBridgeState,
-    path: *const libc::c_char,
-    digest: *mut u8,
-) -> libc::c_int {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let rpath = unsafe { CStr::from_ptr(path) }.to_string_lossy();
-    // SAFETY: the caller passes a writable 16-byte digest buffer.
-    let rdest = unsafe { &mut *digest.cast::<[u8; 16]>() };
-
-    libc::c_int::from(es.get_file_md5(rpath.as_ref(), rdest))
-}
-
-/// Calculate the MD5 digest of a block of binary data.
-///
-/// This actually doesn't rely on the state and isn't really I/O, but we also
-/// have a get-file-MD5 routine so it's convenient to have this here.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_data_md5(
-    data: *const u8,
-    len: libc::size_t,
-    digest: *mut u8,
-) -> libc::c_int {
-    // SAFETY: the caller passes `len` readable bytes at `data`.
-    let rdata = unsafe { slice::from_raw_parts(data, len) };
-    // SAFETY: the caller passes a writable 16-byte digest buffer.
-    unsafe { *digest.cast::<[u8; 16]>() = data_md5(rdata) };
-
-    0
-}
-
 /// Open a Tectonic file for output.
 ///
 /// # Safety
@@ -1184,15 +1278,6 @@ pub unsafe extern "C" fn ttbc_output_write(
     }
 }
 
-/// Flush pending writes to a Tectonic output file.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_output_flush(
-    es: &mut CoreBridgeState,
-    handle: Option<OutputId>,
-) -> libc::c_int {
-    libc::c_int::from(es.output_flush(handle.expect("valid handle")))
-}
-
 /// Close a Tectonic output file.
 #[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_close(
@@ -1221,65 +1306,6 @@ pub unsafe extern "C" fn ttbc_input_open(
     let rname = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     let ris_gz = is_gz != 0;
     es.input_open(&rname, format, ris_gz)
-}
-
-/// Open the "primary input" file.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_input_open_primary(es: &mut CoreBridgeState) -> Option<InputId> {
-    es.input_open_primary()
-}
-
-/// Get the filesystem path of the most-recently-opened input file.
-///
-/// This function is needed by SyncTeX, because its output file should contain
-/// absolute filesystem paths to the input source files. In principle this
-/// functionality could be implemented in a few different ways, but the approach
-/// used here is the most backward-compatible. This function will fill in the
-/// caller's buffer with the filesystem path associated with the most
-/// recently-opened input file, including a terminating NUL, if possible.
-///
-/// It returns 0 if no such path is known, -1 if the path cannot be expressed
-/// UTF-8, -2 if the destination buffer is not big enough, or the number of
-/// bytes written into the buffer (including a terminating NUL) otherwise.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw C pointers.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_last_input_abspath(
-    es: &mut CoreBridgeState,
-    buffer: *mut u8,
-    len: libc::size_t,
-) -> libc::ssize_t {
-    if !es.fs_emulation_settings.expose_absolute_paths {
-        return 0;
-    }
-    match es.latest_input_path {
-        None => 0,
-
-        Some(ref p) => {
-            // In principle we could try to handle the full fun of
-            // cross-platform PathBuf/Unicode conversions, but synctex and
-            // friends will be treating our data as a traditional C string in
-            // the end. So play it safe and stick to UTF-8.
-            let p = match p.to_str() {
-                Some(s) => s.as_bytes(),
-                None => return -1,
-            };
-
-            let n = p.len();
-            if n + 1 > len {
-                return -2;
-            }
-
-            // SAFETY: the caller passes `len` writable bytes and `n + 1 <= len`.
-            unsafe {
-                std::ptr::copy(p.as_ptr(), buffer, n);
-                *buffer.add(n) = b'\0';
-            }
-            (n + 1).try_into().unwrap()
-        }
-    }
 }
 
 /// Get the size of a Tectonic input file.
@@ -1316,7 +1342,7 @@ pub unsafe extern "C" fn ttbc_input_seek(
         libc::SEEK_END => SeekFrom::End(offset as i64),
         _ => {
             tt_error!(
-                es.status,
+                es.host.status,
                 "serious internal bug: unexpected \"whence\" parameter to fseek() wrapper: {}",
                 whence
             );
@@ -1398,7 +1424,7 @@ pub unsafe extern "C" fn ttbc_input_read_partial(
     match es.input_read_partial(handle.expect("valid handle"), rdata) {
         Ok(size) => size as isize,
         Err(e) => {
-            tt_warning!(es.status, "{}-byte read failed", len; e);
+            tt_warning!(es.host.status, "{}-byte read failed", len; e);
             -1
         }
     }
@@ -1445,66 +1471,6 @@ impl Diagnostic {
     pub fn append(&mut self, text: &str) {
         self.message.push_str(text);
     }
-}
-
-/// Create a new diagnostic that will be reported as a warning.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_diag_begin_warning() -> *mut Diagnostic {
-    Box::into_raw(Box::new(Diagnostic::warning()))
-}
-
-/// Create a new diagnostic that will be reported as an error.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_diag_begin_error() -> *mut Diagnostic {
-    Box::into_raw(Box::new(Diagnostic::error()))
-}
-
-/// Append text to a diagnostic.
-///
-/// # Safety
-///
-/// This function is unsafe because it accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_diag_append(diag: &mut Diagnostic, text: *const libc::c_char) {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let text = unsafe { CStr::from_ptr(text) };
-    diag.append(&text.to_string_lossy());
-}
-
-/// "Finish" a diagnostic: report it to the driver and free the diagnostic object.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences a raw Diagnostic pointer
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_diag_finish(es: &mut CoreBridgeState, diag: *mut Diagnostic) {
-    // SAFETY: `diag` came from `ttbc_diag_begin_*` and is not used again.
-    let diag = unsafe { Box::from_raw(diag) };
-    es.finish_diagnostic(*diag);
-}
-
-/// Run a shell command
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C and accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_shell_escape(
-    es: &mut CoreBridgeState,
-    cmd: *const u16,
-    len: libc::size_t,
-) -> libc::c_int {
-    // SAFETY: the caller passes `len` UTF-16 units at `cmd`.
-    let rcmd = unsafe { slice::from_raw_parts(cmd, len) };
-    let rcmd = match String::from_utf16(rcmd) {
-        Ok(cmd) => cmd,
-        Err(err) => {
-            tt_error!(es.status, "command was not valid UTF-16"; err.into());
-            return -1;
-        }
-    };
-
-    libc::c_int::from(es.shell_escape(&rcmd))
 }
 
 /// Different types of files that can be opened by TeX engines
@@ -1693,14 +1659,17 @@ fn an_error_on_one_candidate_does_not_hide_the_next() {
     let mut mem = MemoryIo::new(false);
     mem.create_entry("doc", b"x".to_vec());
     let mut refuses = Refuses;
-    let mut hooks = MinimalDriver::new(IoStack::new(vec![&mut mem, &mut refuses]));
+    let mut hooks = MinimalDriver::new(IoStack::new(vec![
+        Box::new(&mut mem),
+        Box::new(&mut refuses),
+    ]));
     let mut status = NoopStatusBackend::default();
-    let mut state = CoreBridgeState::new(
+    let mut host = BridgeHost::new(
+        Held::Borrowed(&mut hooks),
+        Held::Borrowed(&mut status),
         SecuritySettings::default(),
-        &mut hooks,
-        &mut status,
-        FsEmulationSettings::default(),
     );
+    let mut state = CoreBridgeState::new(&mut host);
     assert!(state.input_open("doc", FileFormat::Tex, false).is_some());
     assert_eq!(state.latest_input_found(), &FoundAs::Asked);
     assert!(state.input_open("other", FileFormat::Tex, false).is_none());

@@ -68,10 +68,10 @@ fn run_case(stem: &str, expect: TexOutcome) {
 
     let res = {
         let io = IoStack::new(vec![
-            &mut mem as &mut dyn IoProvider,
-            &mut tex,
-            &mut fmt,
-            &mut assets,
+            Box::new(&mut mem as &mut dyn IoProvider),
+            Box::new(&mut tex),
+            Box::new(&mut fmt),
+            Box::new(&mut assets),
         ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();

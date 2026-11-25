@@ -15,6 +15,7 @@ use crate::build::math::{
     math_limit_switch, math_radical, start_eq_no, sub_sup,
 };
 use crate::build::pagebuilder::build_page;
+use crate::env::EngineEnv;
 use crate::files::io::open_or_close;
 use crate::memory::mem::{ZERO_GLUE, push_nest};
 use crate::memory::node::{GlueKind, LeaderKind, MathSlot};
@@ -87,16 +88,25 @@ fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) -> Result<(), A
     Ok(())
 }
 
-fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(), Abort> {
+fn begin_every(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    par: TokPar,
+    kind: TokenType,
+) -> Result<(), Abort> {
     let list = st.eqtb.tok_par(par);
     if !list.is_null() {
-        begin_token_list(st, list, kind)?;
+        begin_token_list(st, env, list, kind)?;
     }
     Ok(())
 }
 
-pub(crate) fn shift_case(st: &mut EngineState, b: CaseTable) -> Result<(), Abort> {
-    let list = scan_toks(st, false, false)?;
+pub(crate) fn shift_case(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    b: CaseTable,
+) -> Result<(), Abort> {
+    let list = scan_toks(st, env, false, false)?;
     let eqtb = &st.eqtb;
     let map = |c: i32| match b {
         CaseTable::Lower => eqtb.lc_code(c),
@@ -115,11 +125,14 @@ pub(crate) fn shift_case(st: &mut EngineState, b: CaseTable) -> Result<(), Abort
             _ => t,
         },
     });
-    begin_token_list(st, list, TokenType::BackedUp)
+    begin_token_list(st, env, list, TokenType::BackedUp)
 }
 
-pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(), Abort> {
-    if insert_boundary_inter_char_toks(st)? {
+pub(crate) fn main_control_append_normal_space(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
+    if insert_boundary_inter_char_toks(st, env)? {
         return Ok(());
     }
     let glue = if st.eqtb.glue_par(GluePar::SpaceSkip) == ZERO_GLUE {
@@ -133,8 +146,8 @@ pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(
     Ok(())
 }
 
-fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
-    let rule = scan_rule_spec(st)?;
+fn append_rule(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    let rule = scan_rule_spec(st, env)?;
     st.input.cur_list.tail_append(&mut st.mem, rule);
     match &mut st.input.cur_list.mode {
         Mode::Vertical { prev_depth, .. } => *prev_depth = IGNORE_DEPTH,
@@ -144,12 +157,13 @@ fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
+fn valign_or_lr(st: &mut EngineState, env: &mut EngineEnv, code: ValignCode) -> Result<(), Abort> {
     let Some(math_code) = code.math_code() else {
-        return init_align(st);
+        return init_align(st, env);
     };
     let enabled = eTeX_enabled(
         st,
+        env,
         st.eqtb.int_par(IntPar::Texxet) > 0,
         Command::Valign(code),
     )?;
@@ -162,44 +176,50 @@ fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
 
 fn in_math_shift_group(
     st: &mut EngineState,
-    action: impl FnOnce(&mut EngineState) -> Result<(), Abort>,
+    env: &mut EngineEnv,
+    action: impl FnOnce(&mut EngineState, &mut EngineEnv) -> Result<(), Abort>,
 ) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::MathShift {
-        action(st)
+        action(st, env)
     } else {
-        off_save(st)
+        off_save(st, env)
     }
 }
 
-fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort> {
+fn append_noad(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    kind: Option<NodeType>,
+) -> Result<(), Abort> {
     let n = st.mem.new_noad()?;
     st.input.cur_list.tail_append(&mut st.mem, n);
     match kind {
         Some(t) => st.mem[n].noad_type = t.into(),
         None => back_input(st)?,
     }
-    scan_math(st, MathSlot::Nucleus(n))?;
+    scan_math(st, env, MathSlot::Nucleus(n))?;
     Ok(())
 }
 
-fn math_vcenter(st: &mut EngineState) -> Result<(), Abort> {
-    scan_spec(st, GroupCode::Vcenter, None)?;
+fn math_vcenter(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    scan_spec(st, env, GroupCode::Vcenter, None)?;
     normal_paragraph(st)?;
     push_nest(st)?;
     st.input.cur_list.mode = Mode::vertical(true);
     if st.shipout.insert_src_special_every_vbox {
-        insert_src_special(st)?;
+        insert_src_special(st, env)?;
     }
-    begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)
+    begin_every(st, env, TokPar::EveryVbox, TokenType::EveryVbox)
 }
 
 pub(crate) fn main_control_ignore_spaces(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     primitive: bool,
 ) -> Result<(), Abort> {
     if !primitive {
         loop {
-            get_x_token(st)?;
+            get_x_token(st, env)?;
             if st.scanner.cur.cmd() != Cmd::Spacer {
                 break;
             }
@@ -207,7 +227,7 @@ pub(crate) fn main_control_ignore_spaces(
     } else {
         let saved = st.scanner.scanner_status;
         st.scanner.scanner_status = ScannerStatus::Normal;
-        let outcome = get_next(st);
+        let outcome = get_next(st, env);
         st.scanner.scanner_status = saved;
         outcome?;
 
@@ -234,9 +254,13 @@ enum Next {
 }
 
 #[inline]
-fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next, Abort> {
+fn dispatch_command(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    cancel_boundary: bool,
+) -> Result<Next, Abort> {
     if st.eqtb.int_par(IntPar::TracingCommands) > 0 {
-        show_cur_cmd_chr(st);
+        show_cur_cmd_chr(st, env);
     }
     let mode = st.input.cur_list.mode.kind().or_confusion("mode")?;
     let cmd = st.scanner.cur.cmd();
@@ -245,16 +269,16 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum => {
                 let chr = match st.scanner.cur.char_code() {
                     Some(c) => c,
-                    None => scan_usv_num(st)?,
+                    None => scan_usv_num(st, env)?,
                 };
-                return Ok(if main_control_main_loop(st, chr, cancel_boundary)? {
+                return Ok(if main_control_main_loop(st, env, chr, cancel_boundary)? {
                     Next::BigSwitch
                 } else {
                     Next::Reswitch
                 });
             }
             Cmd::NoBoundary => {
-                get_x_token(st)?;
+                get_x_token(st, env)?;
                 return Ok(
                     if matches!(
                         st.scanner.cur.cmd(),
@@ -268,7 +292,7 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             }
             _ => {}
         }
-        if insert_boundary_inter_char_toks(st)? {
+        if insert_boundary_inter_char_toks(st, env)? {
             return Ok(Next::BigSwitch);
         }
     }
@@ -276,21 +300,21 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
     match (mode, st.scanner.cur) {
         (Horizontal, Command::Spacer(_)) => {
             if st.input.cur_list.space_factor()? == 1000 {
-                main_control_append_normal_space(st)?;
+                main_control_append_normal_space(st, env)?;
             } else {
                 app_space(st)?;
             }
         }
-        (Horizontal | Math, Command::ExSpace) => main_control_append_normal_space(st)?,
+        (Horizontal | Math, Command::ExSpace) => main_control_append_normal_space(st, env)?,
         (_, Command::Relax { .. })
         | (Vertical | Math, Command::Spacer(_))
         | (Math, Command::NoBoundary) => {}
         (_, Command::IgnoreSpaces { primitive }) => {
-            main_control_ignore_spaces(st, primitive)?;
+            main_control_ignore_spaces(st, env, primitive)?;
             return Ok(Next::Reswitch);
         }
         (Vertical, Command::Stop { .. }) => {
-            if its_all_over(st)? {
+            if its_all_over(st, env)? {
                 return Ok(Next::Stop);
             }
         }
@@ -300,7 +324,7 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
         | (_, Command::LastItem(_))
         | (Vertical, Command::Vadjust | Command::ItalCorr)
         | (Vertical | Horizontal, Command::EqNo { .. })
-        | (_, Command::MacParam(_)) => report_illegal_case(st)?,
+        | (_, Command::MacParam(_)) => report_illegal_case(st, env)?,
         (
             Vertical | Horizontal,
             Command::SupMark(_)
@@ -331,17 +355,17 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             | Command::UnVbox(_)
             | Command::Valign(_)
             | Command::Hrule,
-        ) => insert_dollar_sign(st)?,
+        ) => insert_dollar_sign(st, env)?,
 
-        (Vertical, Command::Hrule) | (Horizontal | Math, Command::Vrule) => append_rule(st)?,
+        (Vertical, Command::Hrule) | (Horizontal | Math, Command::Vrule) => append_rule(st, env)?,
         (Vertical, Command::Vskip(s)) | (Horizontal | Math, Command::Hskip(s)) => {
-            append_glue(st, s)?;
+            append_glue(st, env, s)?;
         }
         (Math, Command::Mskip) => {
-            append_glue(st, SkipCode::Mskip)?;
+            append_glue(st, env, SkipCode::Mskip)?;
         }
-        (_, Command::Kern) => append_kern(st, false)?,
-        (Math, Command::Mkern) => append_kern(st, true)?,
+        (_, Command::Kern) => append_kern(st, env, false)?,
+        (Math, Command::Mkern) => append_kern(st, env, true)?,
         (Vertical | Horizontal, Command::LeftBrace(_)) => st
             .save_stack
             .new_save_level(GroupCode::Simple, st.mem.line)?,
@@ -350,22 +374,22 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             .new_save_level(GroupCode::SemiSimple, st.mem.line)?,
         (_, Command::EndGroup) => {
             if st.save_stack.cur_group == GroupCode::SemiSimple {
-                unsave(st)?;
+                unsave(st, env)?;
             } else {
-                off_save(st)?;
+                off_save(st, env)?;
             }
         }
 
-        (_, Command::RightBrace(_)) => handle_right_brace(st)?,
+        (_, Command::RightBrace(_)) => handle_right_brace(st, env)?,
         (Vertical, Command::Hmove { left: negate })
         | (Horizontal | Math, Command::Vmove { raise: negate }) => {
-            let d = scan_dimen(st, false)?;
+            let d = scan_dimen(st, env, false)?;
             let shift = if negate { -d } else { d };
-            scan_box(st, BoxContext::Shift(shift))?;
+            scan_box(st, env, BoxContext::Shift(shift))?;
         }
-        (_, Command::LeaderShip(code)) => scan_box(st, BoxContext::leader_ship(code))?,
-        (_, Command::MakeBox(code)) => begin_box(st, BoxContext::Shift(Scaled::ZERO), code)?,
-        (Vertical, Command::StartPar { indent }) => new_graf(st, indent)?,
+        (_, Command::LeaderShip(code)) => scan_box(st, env, BoxContext::leader_ship(code))?,
+        (_, Command::MakeBox(code)) => begin_box(st, env, BoxContext::Shift(Scaled::ZERO), code)?,
+        (Vertical, Command::StartPar { indent }) => new_graf(st, env, indent)?,
         (
             Vertical,
             Command::Letter(_)
@@ -383,22 +407,22 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             | Command::NoBoundary,
         ) => {
             back_input(st)?;
-            new_graf(st, true)?;
+            new_graf(st, env, true)?;
         }
         (Horizontal | Math, Command::StartPar { indent }) => indent_in_hmode(st, indent)?,
         (Vertical, Command::ParEnd) => {
             normal_paragraph(st)?;
             if st.input.cur_list.mode.is_outer() {
-                build_page(st)?;
+                build_page(st, env)?;
             }
         }
         (Horizontal, Command::ParEnd) => {
             if st.scanner.align_state < 0 {
-                off_save(st)?;
+                off_save(st, env)?;
             }
-            end_graf(st)?;
+            end_graf(st, env)?;
             if st.input.cur_list.mode.name() == ModeName::Vertical {
-                build_page(st)?;
+                build_page(st, env)?;
             }
         }
         (
@@ -408,71 +432,75 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             | Command::Hrule
             | Command::UnVbox(_)
             | Command::Halign,
-        ) => head_for_vmode(st)?,
-        (_, Command::Insert) | (Horizontal | Math, Command::Vadjust) => begin_insert_or_adjust(st)?,
-        (_, Command::Mark { marks }) => make_mark(st, marks)?,
-        (_, Command::BreakPenalty) => append_penalty(st)?,
-        (_, Command::RemoveItem(t)) => delete_last(st, t)?,
+        ) => head_for_vmode(st, env)?,
+        (_, Command::Insert) | (Horizontal | Math, Command::Vadjust) => {
+            begin_insert_or_adjust(st, env)?
+        }
+        (_, Command::Mark { marks }) => make_mark(st, env, marks)?,
+        (_, Command::BreakPenalty) => append_penalty(st, env)?,
+        (_, Command::RemoveItem(t)) => delete_last(st, env, t)?,
         (Vertical, Command::UnVbox(code)) | (Horizontal | Math, Command::UnHbox(code)) => {
-            unpackage(st, code)?
+            unpackage(st, env, code)?
         }
         (Horizontal, Command::ItalCorr) => append_italic_correction(st)?,
         (Math, Command::ItalCorr) => {
             let k = st.mem.new_kern(Scaled::ZERO)?;
             st.input.cur_list.tail_append(&mut st.mem, k);
         }
-        (Horizontal | Math, Command::Discretionary { hyphen }) => append_discretionary(st, hyphen)?,
-        (Horizontal, Command::Accent) => make_accent(st)?,
-        (_, Command::CarRet { .. } | Command::TabMark(_)) => align_error(st)?,
-        (_, Command::NoAlign) => no_align_error(st)?,
-        (_, Command::Omit) => omit_error(st)?,
-        (Vertical, Command::Halign) => init_align(st)?,
-        (Horizontal, Command::Valign(code)) => valign_or_lr(st, code)?,
+        (Horizontal | Math, Command::Discretionary { hyphen }) => {
+            append_discretionary(st, env, hyphen)?
+        }
+        (Horizontal, Command::Accent) => make_accent(st, env)?,
+        (_, Command::CarRet { .. } | Command::TabMark(_)) => align_error(st, env)?,
+        (_, Command::NoAlign) => no_align_error(st, env)?,
+        (_, Command::Omit) => omit_error(st, env)?,
+        (Vertical, Command::Halign) => init_align(st, env)?,
+        (Horizontal, Command::Valign(code)) => valign_or_lr(st, env, code)?,
         (Math, Command::Halign) => {
-            if privileged(st)? {
-                in_math_shift_group(st, init_align)?;
+            if privileged(st, env)? {
+                in_math_shift_group(st, env, init_align)?;
             }
         }
         (Vertical | Horizontal, Command::Endv) => {
             if !insert_par_token_before(st, ParTokenContext::AllGroups)? {
-                do_endv(st)?;
+                do_endv(st, env)?;
             }
         }
-        (_, Command::EndCsName) => cs_error(st)?,
+        (_, Command::EndCsName) => cs_error(st, env)?,
 
-        (Horizontal, Command::MathShift(_)) => init_math(st)?,
+        (Horizontal, Command::MathShift(_)) => init_math(st, env)?,
         (Math, Command::EqNo { left }) => {
-            if privileged(st)? {
-                in_math_shift_group(st, |st| start_eq_no(st, left))?;
+            if privileged(st, env)? {
+                in_math_shift_group(st, env, |st, env| start_eq_no(st, env, left))?;
             }
         }
-        (Math, Command::LeftBrace(_)) => append_noad(st, None)?,
+        (Math, Command::LeftBrace(_)) => append_noad(st, env, None)?,
         (Math, Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c)) => {
-            set_math_char(st, c.raw(), st.eqtb.math_code(c.raw()))?
+            set_math_char(st, env, c.raw(), st.eqtb.math_code(c.raw()))?
         }
         (Math, Command::CharNum) => {
-            let c = scan_char_num(st)?;
-            set_math_char(st, c, st.eqtb.math_code(c))?;
+            let c = scan_char_num(st, env)?;
+            set_math_char(st, env, c, st.eqtb.math_code(c))?;
         }
         (Math, Command::MathCharNum(code)) => {
-            let c = scan_math_char_num(st, code)?;
-            set_math_char(st, st.scanner.cur.encode().1, c)?;
+            let c = scan_math_char_num(st, env, code)?;
+            set_math_char(st, env, st.scanner.cur.encode().1, c)?;
         }
         (Math, Command::MathGiven(code)) => {
             let c = math_code_from_tex(code);
-            set_math_char(st, code, c)?
+            set_math_char(st, env, code, c)?
         }
-        (Math, Command::XetexMathGiven(code)) => set_math_char(st, code, code)?,
+        (Math, Command::XetexMathGiven(code)) => set_math_char(st, env, code, code)?,
         (Math, Command::DelimNum(code)) => {
-            let c = scan_delim_num(st, code)?;
-            set_math_char(st, st.scanner.cur.encode().1, c)?;
+            let c = scan_delim_num(st, env, code)?;
+            set_math_char(st, env, st.scanner.cur.encode().1, c)?;
         }
-        (Math, Command::MathComp(t)) => append_noad(st, Some(t))?,
-        (Math, Command::LimitSwitch(code)) => math_limit_switch(st, code)?,
-        (Math, Command::Radical(code)) => math_radical(st, code)?,
-        (Math, Command::Accent) => math_ac(st, None)?,
-        (Math, Command::MathAccent(code)) => math_ac(st, Some(code))?,
-        (Math, Command::Vcenter) => math_vcenter(st)?,
+        (Math, Command::MathComp(t)) => append_noad(st, env, Some(t))?,
+        (Math, Command::LimitSwitch(code)) => math_limit_switch(st, env, code)?,
+        (Math, Command::Radical(code)) => math_radical(st, env, code)?,
+        (Math, Command::Accent) => math_ac(st, env, None)?,
+        (Math, Command::MathAccent(code)) => math_ac(st, env, Some(code))?,
+        (Math, Command::Vcenter) => math_vcenter(st, env)?,
         (Math, Command::MathStyle(style)) => {
             let s = st.mem.new_style(style)?;
             st.input.cur_list.tail_append(&mut st.mem, s);
@@ -482,33 +510,33 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
             st.input.cur_list.tail_append(&mut st.mem, g);
             st.mem[g].subtype = GlueKind::CondMath.into();
         }
-        (Math, Command::MathChoice) => append_choices(st)?,
-        (Math, Command::SubMark(_) | Command::SupMark(_)) => sub_sup(st)?,
-        (Math, Command::Above(code)) => math_fraction(st, code)?,
-        (Math, Command::LeftRight(code)) => math_left_right(st, code)?,
-        (Math, Command::MathShift(_)) => in_math_shift_group(st, after_math)?,
+        (Math, Command::MathChoice) => append_choices(st, env)?,
+        (Math, Command::SubMark(_) | Command::SupMark(_)) => sub_sup(st, env)?,
+        (Math, Command::Above(code)) => math_fraction(st, env, code)?,
+        (Math, Command::LeftRight(code)) => math_left_right(st, env, code)?,
+        (Math, Command::MathShift(_)) => in_math_shift_group(st, env, after_math)?,
 
         (_, Command::PartokenName) => {
-            get_token(st)?;
+            get_token(st, env)?;
             if !st.scanner.cur_cs.is_none() {
                 st.input.par_loc = st.scanner.cur_cs;
                 st.input.par_token = st.scanner.cur_tok;
             }
         }
-        (_, _) if cmd.is_prefixed() => prefixed_command(st)?,
+        (_, _) if cmd.is_prefixed() => prefixed_command(st, env)?,
         (_, Command::AfterAssignment) => {
-            get_token(st)?;
+            get_token(st, env)?;
             st.scanner.after_token = st.scanner.cur_tok;
         }
         (_, Command::AfterGroup) => {
-            get_token(st)?;
+            get_token(st, env)?;
             st.save_stack.save_for_after(st.scanner.cur_tok)?;
         }
-        (_, Command::InStream { open }) => open_or_close(st, open)?,
-        (_, Command::Message { err }) => issue_message(st, err)?,
-        (_, Command::CaseShift(base)) => shift_case(st, base)?,
-        (_, Command::Xray(code)) => show_whatever(st, code)?,
-        (_, Command::Extension(code)) => do_extension(st, code)?,
+        (_, Command::InStream { open }) => open_or_close(st, env, open)?,
+        (_, Command::Message { err }) => issue_message(st, env, err)?,
+        (_, Command::CaseShift(base)) => shift_case(st, env, base)?,
+        (_, Command::Xray(code)) => show_whatever(st, env, code)?,
+        (_, Command::Extension(code)) => do_extension(st, env, code)?,
         _ => {}
     }
     Ok(Next::BigSwitch)
@@ -516,11 +544,12 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
 
 fn main_control_from(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     run_every_job: bool,
     mut resume_pending_command: bool,
 ) -> Result<(), Abort> {
     if run_every_job {
-        begin_every(st, TokPar::EveryJob, TokenType::EveryJob)?;
+        begin_every(st, env, TokPar::EveryJob, TokenType::EveryJob)?;
     }
     // Cancellation and fence hooks are for resident sessions only, batch runs
     // must not pay for them per command.
@@ -533,16 +562,16 @@ fn main_control_from(
             resume_pending_command = false;
         } else {
             if resident {
-                capture_prefetch_fence(st);
+                capture_prefetch_fence(st, env);
             }
-            get_x_token(st)?;
+            get_x_token(st, env)?;
         }
-        if resident && capture_command_fence(st) {
+        if resident && capture_command_fence(st, env) {
             return Err(Abort::Horizoned);
         }
         let mut cancel_boundary = false;
         loop {
-            match dispatch_command(st, cancel_boundary)? {
+            match dispatch_command(st, env, cancel_boundary)? {
                 Next::BigSwitch => break,
                 Next::Reswitch => cancel_boundary = false,
                 Next::ReswitchNoBoundary => cancel_boundary = true,
@@ -552,13 +581,14 @@ fn main_control_from(
     }
 }
 
-pub(crate) fn main_control(st: &mut EngineState) -> Result<(), Abort> {
-    main_control_from(st, true, false)
+pub(crate) fn main_control(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    main_control_from(st, env, true, false)
 }
 
 pub(crate) fn main_control_resume(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     resume_pending_command: bool,
 ) -> Result<(), Abort> {
-    main_control_from(st, false, resume_pending_command)
+    main_control_from(st, env, false, resume_pending_command)
 }

@@ -150,7 +150,10 @@ fn scan_integer(buffers: &mut GlobalBuffer, token_value: &mut i64) -> bool {
     idx - start != if sign { 1 } else { 0 }
 }
 
-pub(crate) fn eat_bst_white_space(ctx: &mut Bibtex<'_, '_>, buffers: &mut GlobalBuffer) -> bool {
+pub(crate) fn eat_bst_white_space(
+    ctx: &mut Bibtex<'_, '_, '_>,
+    buffers: &mut GlobalBuffer,
+) -> bool {
     loop {
         let init = buffers.init(BufTy::Base);
         if Scan::new()
@@ -171,7 +174,7 @@ pub(crate) fn eat_bst_white_space(ctx: &mut Bibtex<'_, '_>, buffers: &mut Global
 }
 
 fn handle_char(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     single_function: &mut Vec<WizOp>,
     wiz_loc: HashPointer<BstFn>,
@@ -327,7 +330,7 @@ fn handle_char(
 }
 
 pub(crate) fn scan_fn_def(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     fn_hash_loc: HashPointer<BstFn>,
     wiz_loc: HashPointer<BstFn>,
@@ -370,7 +373,7 @@ pub(crate) fn scan_fn_def(
 }
 
 fn scan_balanced_braces(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &StringPool,
     bibs: &mut BibData,
@@ -543,7 +546,7 @@ fn scan_balanced_braces(
 }
 
 fn scan_a_field_token_and_eat_white(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     store_field: bool,
     command: Option<BibCommand>,
@@ -734,7 +737,7 @@ fn scan_a_field_token_and_eat_white(
 // TODO: Refactor this to bundle up arguments into structs as relevant
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scan_and_store_the_field_value_and_eat_white(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     store_field: bool,
     command: Option<BibCommand>,
@@ -904,7 +907,7 @@ pub(crate) fn scan_and_store_the_field_value_and_eat_white(
 }
 
 pub(crate) fn decr_brace_level(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     cites: &CiteInfo,
     pop_lit_var: StrNumber,
@@ -920,7 +923,7 @@ pub(crate) fn decr_brace_level(
 }
 
 pub(crate) fn check_brace_level(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     cites: &CiteInfo,
     pop_lit_var: StrNumber,
@@ -933,7 +936,7 @@ pub(crate) fn check_brace_level(
 }
 
 pub(crate) fn name_scan_for_and(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     buffers: &mut GlobalBuffer,
     cites: &CiteInfo,

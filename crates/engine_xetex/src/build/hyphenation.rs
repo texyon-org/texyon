@@ -8,6 +8,7 @@ pub(crate) use crate::base::consts::BIGGEST_LANG;
 use crate::base::consts::{BIGGEST_CHAR, NULL_FONT};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, MemPtr, StrNumber};
+use crate::env::EngineEnv;
 use crate::fonts::LigChar;
 use crate::print::Esc;
 use crate::print::errors::{Abort, Capacity, OrConfusion, error};
@@ -691,30 +692,31 @@ fn max_word_len(eqtb: &EqtbState) -> usize {
     usize::try_from(eqtb.max_hyphenatable_length()).unwrap_or(0)
 }
 
-pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn new_patterns(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
         error(
             st,
+            env,
             ("Too late for ", Esc("patterns")),
             &["All patterns must be given before typesetting begins."],
         )?;
 
-        let list = scan_toks(st, false, false)?;
+        let list = scan_toks(st, env, false, false)?;
         st.mem.tokens.flush(list);
         return Ok(());
     }
 
     st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
 
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
     let mut k = 0;
     st.hyph.hyf[0] = 0;
     let mut digit_sensed = false;
 
     loop {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
         match st.scanner.cur.cmd() {
             Cmd::Letter | Cmd::OtherChar => {
                 let cur_chr = st.scanner.cur.char_code().or_confusion("pattern letter")?;
@@ -730,7 +732,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         let code = st.eqtb.lc_code(cur_chr);
                         if code == 0 {
-                            error(st, "Nonletter", &[APPENDIX_H])?;
+                            error(st, env, "Nonletter", &[APPENDIX_H])?;
                         }
                         code
                     };
@@ -751,7 +753,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
-                        error(st, "Duplicate pattern", &[APPENDIX_H])?;
+                        error(st, env, "Duplicate pattern", &[APPENDIX_H])?;
                     }
                     st.hyph.set_trie_o(q, op);
                 }
@@ -765,7 +767,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 digit_sensed = false;
             }
             _ => {
-                error(st, ("Bad ", Esc("patterns")), &[APPENDIX_H])?;
+                error(st, env, ("Bad ", Esc("patterns")), &[APPENDIX_H])?;
             }
         }
     }
@@ -777,10 +779,10 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn new_hyph_exceptions(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
 
     st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
     if st.hyph.trie_not_ready {
@@ -793,7 +795,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     let mut p = None;
 
     loop {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
 
         // reswitch: \char re-dispatches as Cmd::CharGiven
         loop {
@@ -814,6 +816,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                         if st.hyph.hc[0] == 0 {
                             error(
                                 st,
+                                env,
                                 "Not a letter",
                                 &[
                                     r"Letters in \hyphenation words must have \lccode>0.",
@@ -835,7 +838,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 Cmd::CharNum => {
-                    let c = scan_char_num(st)?;
+                    let c = scan_char_num(st, env)?;
                     st.scanner.cur = Command::CharGiven(Usv::new(c).or_confusion("char_num")?);
                 }
                 Cmd::Spacer | Cmd::RightBrace => {
@@ -854,6 +857,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                 _ => {
                     error(
                         st,
+                        env,
                         ("Improper ", Esc("hyphenation"), " will be flushed"),
                         &[
                             "Hyphenation exceptions must contain only letters",

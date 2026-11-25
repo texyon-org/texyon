@@ -1,12 +1,12 @@
 //! Shipping boxes out to the XDV file.
 
-use crate::base::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
+use crate::base::consts::{MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
 use crate::base::params::{DimenPar, IntPar};
 use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
 use crate::build::packaging::LrState;
 use crate::build::pagebuilder::PageContents;
 use crate::engine::output_file_extension;
-use crate::ffi::bridge::{output_close, output_flush, output_open, strerror};
+use crate::env::EngineEnv;
 use crate::files::io::{make_name_string, open_log_file, pack_job_name};
 use crate::fonts::FontState;
 use crate::fonts::ext::apply_tfm_font_mapping;
@@ -24,7 +24,7 @@ use crate::print::{
     Selector, begin_diagnostic, end_diagnostic, print, print_char, print_int, print_ln, print_nl,
     print_scaled, show_box,
 };
-use crate::shipout::dvi::{Axis, DviWriter, MoveReg};
+use crate::shipout::dvi::{Axis, DviFontMetrics, DviWriter, MoveReg};
 use crate::shipout::synctex::{
     synctex_current, synctex_hlist, synctex_horizontal_rule_or_glue, synctex_kern, synctex_math,
     synctex_sheet, synctex_teehs, synctex_tsilh, synctex_tsilv, synctex_vlist, synctex_void_hlist,
@@ -78,29 +78,29 @@ impl MemState {
     }
 }
 
-fn synch_h(st: &mut EngineState) -> Result<(), Abort> {
+fn synch_h(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let delta = st.shipout.cur_h - st.shipout.dvi_h;
-        st.shipout.movement(delta, Axis::Right)?;
+        st.shipout.movement(env, delta, Axis::Right)?;
         st.shipout.dvi_h = st.shipout.cur_h;
     }
     Ok(())
 }
 
-fn synch_v(st: &mut EngineState) -> Result<(), Abort> {
+fn synch_v(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.shipout.cur_v != st.shipout.dvi_v {
         let delta = st.shipout.cur_v - st.shipout.dvi_v;
-        st.shipout.movement(delta, Axis::Down)?;
+        st.shipout.movement(env, delta, Axis::Down)?;
         st.shipout.dvi_v = st.shipout.cur_v;
     }
     Ok(())
 }
 
-fn dvi_font_def(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
+fn dvi_font_def(st: &mut EngineState, env: &mut EngineEnv, f: FontId) -> Result<(), Abort> {
     let k = f.dvi_number();
     if st.fonts.is_native_font(f) {
         let def = st.fonts.make_font_def(f)?;
-        return st.shipout.dvi.native_font_def(k, &def);
+        return st.shipout.dvi.native_font_def(env, k, &def);
     }
     let font_name = st.fonts.font_name[f];
     let name = &st.strings.str_pool[st.strings.str_range(font_name)];
@@ -111,14 +111,14 @@ fn dvi_font_def(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
         .position(|&c| c == u16::from(b':'))
         .map_or(name.len(), |l| l + 1);
     let area = &st.strings.str_pool[st.strings.str_range(st.fonts.font_area[f])];
-    st.shipout.dvi.fnt_def(
-        k,
-        st.fonts.check_bytes(f),
-        st.fonts.font_size[f],
-        st.fonts.font_dsize[f],
-        area,
-        &name[..name_len],
-    )
+    let metrics = DviFontMetrics {
+        check: st.fonts.check_bytes(f),
+        size: st.fonts.font_size[f],
+        design_size: st.fonts.font_dsize[f],
+    };
+    st.shipout
+        .dvi
+        .fnt_def(env, k, metrics, area, &name[..name_len])
 }
 
 pub fn initialize_shipout_variables(st: &mut EngineState) {
@@ -129,52 +129,56 @@ pub fn initialize_shipout_variables(st: &mut EngineState) {
     s.right_moves.clear();
 }
 
-fn dvi_special_from_cur_string(st: &mut EngineState) -> Result<(), Abort> {
-    st.shipout.dvi.special(st.strings.cur_string())?;
+fn dvi_special_from_cur_string(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    st.shipout.dvi.special(env, st.strings.cur_string())?;
     st.strings.discard_cur_string();
     Ok(())
 }
 
-pub(crate) fn ship_out(st: &mut EngineState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
+pub(crate) fn ship_out(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    page: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     let mut lr = LrState::START;
     let p = page.ptr();
     let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
-    synctex_sheet(st, mag, &job_name);
+    synctex_sheet(st, env, mag, &job_name);
 
     if st.strings.job_name == StrNumber::NONE {
-        open_log_file(st)?;
+        open_log_file(st, env)?;
     }
     let tracing_output = st.eqtb.int_par(IntPar::TracingOutput) > 0;
     if tracing_output {
-        print_nl(st, "");
-        print_ln(st);
-        print(st, "Completed box being shipped out");
+        print_nl(st, env, "");
+        print_ln(st, env);
+        print(st, env, "Completed box being shipped out");
     }
     if st.shipout.term_offset > st.config.max_print_line - 9 {
-        print_ln(st);
+        print_ln(st, env);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        print_char(st, b' ');
+        print_char(st, env, b' ');
     }
 
-    print_char(st, b'[');
+    print_char(st, env, b'[');
     let mut j: u8 = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
     for k in 0..=j {
-        print_int(st, st.eqtb.count(k));
+        print_int(st, env, st.eqtb.count(k));
         if k < j {
-            print_char(st, b'.');
+            print_char(st, env, b'.');
         }
     }
-    output_flush(st.shipout.rust_stdout);
+    env.flush_terminal();
 
     if tracing_output {
-        print_char(st, b']');
+        print_char(st, env, b']');
         begin_diagnostic(st);
-        show_box(st, p);
-        end_diagnostic(st, true);
+        show_box(st, env, p);
+        end_diagnostic(st, env, true);
     }
 
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
@@ -187,6 +191,7 @@ pub(crate) fn ship_out(st: &mut EngineState, page: NodePtr<BoxNode>) -> Result<(
     {
         error(
             st,
+            env,
             "Huge page cannot be shipped out",
             &[
                 "The page just created is more than 18 feet tall or",
@@ -196,39 +201,44 @@ pub(crate) fn ship_out(st: &mut EngineState, page: NodePtr<BoxNode>) -> Result<(
 
         if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
             begin_diagnostic(st);
-            print_nl(st, "The following box has been deleted:");
-            show_box(st, p);
-            end_diagnostic(st, true);
+            print_nl(st, env, "The following box has been deleted:");
+            show_box(st, env, p);
+            end_diagnostic(st, env, true);
         }
     } else {
-        ship_page(st, &mut lr, page)?;
+        ship_page(st, env, &mut lr, page)?;
     }
 
     if lr.problems > 0 {
-        print_ln(st);
-        print_nl(st, "\\endL or \\endR problem (");
-        print_int(st, lr.problems / 10000);
-        print(st, " missing, ");
-        print_int(st, lr.problems % 10000);
-        print(st, " extra");
-        print_char(st, b')');
-        print_ln(st);
+        print_ln(st, env);
+        print_nl(st, env, "\\endL or \\endR problem (");
+        print_int(st, env, lr.problems / 10000);
+        print(st, env, " missing, ");
+        print_int(st, env, lr.problems % 10000);
+        print(st, env, " extra");
+        print_char(st, env, b')');
+        print_ln(st, env);
     }
 
     if !lr.ptr.is_none() || lr.dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
-        print_char(st, b']');
+        print_char(st, env, b']');
     }
     st.shipout.dead_cycles = 0;
-    output_flush(st.shipout.rust_stdout);
+    env.flush_terminal();
     st.mem.flush_node_list(p)?;
-    synctex_teehs(st);
+    synctex_teehs(st, env);
     Ok(())
 }
 
-fn ship_page(st: &mut EngineState, lr: &mut LrState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn ship_page(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    lr: &mut LrState,
+    page: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
     let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
     let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
@@ -256,11 +266,10 @@ fn ship_page(st: &mut EngineState, lr: &mut LrState, page: NodePtr<BoxNode>) -> 
 
     if st.shipout.output_file_name == StrNumber::NONE {
         if st.strings.job_name == StrNumber::NONE {
-            open_log_file(st)?;
+            open_log_file(st, env)?;
         }
         let path = pack_job_name(st, output_file_extension(st))?;
-        st.shipout.dvi.file = output_open(&path, false);
-        if st.shipout.dvi.file == INVALID_HANDLE {
+        if !env.open_xdv(&path) {
             return Err(Abort::CannotOpenOutput {
                 name: path.as_slice().into(),
             });
@@ -270,43 +279,43 @@ fn ship_page(st: &mut EngineState, lr: &mut LrState, page: NodePtr<BoxNode>) -> 
 
     if st.shipout.total_pages == 0 {
         let id = id_byte(st.config.semantic_pagination_enabled);
-        st.shipout.dvi.begin_preamble(id)?;
-        prepare_mag(st)?;
+        st.shipout.dvi.begin_preamble(env, id)?;
+        prepare_mag(st, env)?;
         let mag = st.eqtb.int_par(IntPar::Mag);
-        st.shipout.dvi.end_preamble(mag, b"tectonic")?;
+        st.shipout.dvi.end_preamble(env, mag, b"tectonic")?;
     }
 
     let counts = [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|k| st.eqtb.count(k));
-    st.shipout.dvi.bop(counts)?;
+    st.shipout.dvi.bop(env, counts)?;
 
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    print(st, "pdf:pagesize ");
+    print(st, env, "pdf:pagesize ");
     if pdf_page_width <= Scaled::ZERO || pdf_page_height <= Scaled::ZERO {
-        print(st, "default");
+        print(st, env, "default");
     } else {
-        print(st, "width");
-        print(st, b' ');
-        print_scaled(st, pdf_page_width);
-        print(st, "pt");
-        print(st, b' ');
-        print(st, "height");
-        print(st, b' ');
-        print_scaled(st, pdf_page_height);
-        print(st, "pt");
+        print(st, env, "width");
+        print(st, env, b' ');
+        print_scaled(st, env, pdf_page_width);
+        print(st, env, "pt");
+        print(st, env, b' ');
+        print(st, env, "height");
+        print(st, env, b' ');
+        print_scaled(st, env, pdf_page_height);
+        print(st, env, "pt");
     }
     st.shipout.selector = old_setting;
 
-    dvi_special_from_cur_string(st)?;
+    dvi_special_from_cur_string(st, env)?;
 
     st.shipout.cur_v = height + v_offset;
     if st.mem[page].is_vlist() {
-        vlist_out(st, lr, page)?;
+        vlist_out(st, env, lr, page)?;
     } else {
-        hlist_out(st, lr, page)?;
+        hlist_out(st, env, lr, page)?;
     }
 
-    st.shipout.dvi.eop(st.scanner.logical_clock)?;
+    st.shipout.dvi.eop(env, st.scanner.logical_clock)?;
     st.shipout.total_pages += 1;
     st.shipout.dvi.depth = -1;
     Ok(())
@@ -320,15 +329,15 @@ fn id_byte(semantic_pagination: bool) -> u8 {
     }
 }
 
-fn dvi_font_select(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
+fn dvi_font_select(st: &mut EngineState, env: &mut EngineEnv, f: FontId) -> Result<(), Abort> {
     if f == st.shipout.dvi_f {
         return Ok(());
     }
     if !st.fonts.font_used[f] {
-        dvi_font_def(st, f)?;
+        dvi_font_def(st, env, f)?;
         st.fonts.font_used[f] = true;
     }
-    st.shipout.dvi.fnt(f.dvi_number())?;
+    st.shipout.dvi.fnt(env, f.dvi_number())?;
     st.shipout.dvi_f = f;
     Ok(())
 }
@@ -607,28 +616,39 @@ impl MemState {
         self.lr_code(lr.ptr) == Some(code.lr_end())
     }
 
-    fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
+    fn pop_dvi_level(
+        &mut self,
+        env: &mut EngineEnv,
+        shipout: &mut ShipoutState,
+        save_loc: i32,
+    ) -> Result<(), Abort> {
         shipout.prune_movements(save_loc);
-        shipout.dvi.leave_level(save_loc)
+        shipout.dvi.leave_level(env, save_loc)
     }
 }
 
-fn ship_box(st: &mut EngineState, lr: &mut LrState, b: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn ship_box(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    lr: &mut LrState,
+    b: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     if st.mem[b].is_vlist() {
-        vlist_out(st, lr, b)
+        vlist_out(st, env, lr, b)
     } else {
-        hlist_out(st, lr, b)
+        hlist_out(st, env, lr, b)
     }
 }
 
 fn ship_leader_box(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     leader: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
     let outer_doing_leaders = st.shipout.doing_leaders;
     st.shipout.doing_leaders = true;
-    ship_box(st, lr, leader)?;
+    ship_box(st, env, lr, leader)?;
     st.shipout.doing_leaders = outer_doing_leaders;
     Ok(())
 }
@@ -654,6 +674,7 @@ impl RuleDims {
 
 fn hlist_rule_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     p: MemIdx,
@@ -667,20 +688,21 @@ fn hlist_rule_out(
     }
     rule.ht += rule.dp;
     if rule.ht > Scaled::ZERO && rule.wd > Scaled::ZERO {
-        synch_h(st)?;
+        synch_h(st, env)?;
         st.shipout.cur_v = base_line + rule.dp;
-        synch_v(st)?;
-        st.shipout.dvi.set_rule(rule.ht, rule.wd)?;
+        synch_v(st, env)?;
+        st.shipout.dvi.set_rule(env, rule.ht, rule.wd)?;
         st.shipout.cur_v = base_line;
         st.shipout.dvi_h += rule.wd;
     }
     st.shipout.cur_h += rule.wd;
-    synctex_horizontal_rule_or_glue(st, p, Some(rule));
+    synctex_horizontal_rule_or_glue(st, env, p, Some(rule));
     Ok(())
 }
 
 fn vlist_rule_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     left_edge: Scaled,
@@ -696,9 +718,9 @@ fn vlist_rule_out(
         if lr.dir == Dir::Rtl {
             st.shipout.cur_h -= rule.wd;
         }
-        synch_h(st)?;
-        synch_v(st)?;
-        st.shipout.dvi.put_rule(rule.ht, rule.wd)?;
+        synch_h(st, env)?;
+        synch_v(st, env)?;
+        st.shipout.dvi.put_rule(env, rule.ht, rule.wd)?;
         st.shipout.cur_h = left_edge;
     }
     Ok(())
@@ -720,15 +742,27 @@ struct BoxLeaders {
     size: Scaled,
 }
 
-fn hlist_glue_out(
-    st: &mut EngineState,
-    lr: &mut LrState,
+/// The box an hlist belongs to and where its baseline and left edge are.
+#[derive(Clone, Copy)]
+struct HlistFrame {
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     left_edge: Scaled,
+}
+
+fn hlist_glue_out(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    lr: &mut LrState,
+    frame: HlistFrame,
     glue: NodePtr<GlueNode>,
     rounding: &mut GlueRounding,
 ) -> Result<(), Abort> {
+    let HlistFrame {
+        this_box,
+        base_line,
+        left_edge,
+    } = frame;
     let spec = st.mem[glue].glue_ptr;
     let mut wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
@@ -742,7 +776,7 @@ fn hlist_glue_out(
                     wd,
                     ..RuleDims::of(&st.mem, rule)
                 };
-                return hlist_rule_out(st, this_box, base_line, glue.idx(), rule);
+                return hlist_rule_out(st, env, this_box, base_line, glue.idx(), rule);
             }
             Leader::Box(leader) => leader,
         };
@@ -773,13 +807,13 @@ fn hlist_glue_out(
 
             while st.shipout.cur_h + leader_wd <= edge {
                 st.shipout.cur_v = base_line + st.mem[leader].shift_amount;
-                synch_v(st)?;
-                synch_h(st)?;
-                let (save_h, _) = with_saved_dvi_pos(st, |st| {
+                synch_v(st, env)?;
+                synch_h(st, env)?;
+                let (save_h, _) = with_saved_dvi_pos(st, env, |st, env| {
                     if lr.dir == Dir::Rtl {
                         st.shipout.cur_h += leader_wd;
                     }
-                    ship_leader_box(st, lr, leader)
+                    ship_leader_box(st, env, lr, leader)
                 })?;
                 st.shipout.cur_v = base_line;
                 st.shipout.cur_h = save_h + leader_wd + lx;
@@ -795,16 +829,20 @@ fn hlist_glue_out(
     }
 
     st.shipout.cur_h += wd;
-    synctex_horizontal_rule_or_glue(st, glue, None);
+    synctex_horizontal_rule_or_glue(st, env, glue, None);
     Ok(())
 }
 
-fn glyph_out(st: &mut EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abort> {
-    synch_h(st)?;
-    synch_v(st)?;
+fn glyph_out(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    glyph: NodePtr<GlyphNode>,
+) -> Result<(), Abort> {
+    synch_h(st, env)?;
+    synch_v(st, env)?;
     let glyph = st.mem[glyph];
-    dvi_font_select(st, glyph.font)?;
-    st.shipout.dvi.set_glyph(glyph.width, glyph.glyph)?;
+    dvi_font_select(st, env, glyph.font)?;
+    st.shipout.dvi.set_glyph(env, glyph.width, glyph.glyph)?;
     st.shipout.cur_h += glyph.width;
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok(())
@@ -812,23 +850,24 @@ fn glyph_out(st: &mut EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abor
 
 fn native_word_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     word: NodePtr<NativeWordNode>,
     actual_text: bool,
 ) -> Result<(), Abort> {
-    synch_h(st)?;
-    synch_v(st)?;
-    dvi_font_select(st, st.mem[word].font)?;
+    synch_h(st, env)?;
+    synch_v(st, env)?;
+    dvi_font_select(st, env, st.mem[word].font)?;
     if actual_text {
         if st.mem[word].length > 0 || st.mem[word].glyph_info != 0 {
             let (width, locations, gids) = glyph_array(&st.mem, word);
             let text = st.mem.entries(word);
             st.shipout
                 .dvi
-                .set_text_and_glyphs(text, width, locations, gids)?;
+                .set_text_and_glyphs(env, text, width, locations, gids)?;
         }
     } else if st.mem[word].glyph_info != 0 {
         let (width, locations, gids) = glyph_array(&st.mem, word);
-        st.shipout.dvi.set_glyphs(width, locations, gids)?;
+        st.shipout.dvi.set_glyphs(env, width, locations, gids)?;
     }
     st.shipout.cur_h += st.mem[word].width;
     st.shipout.dvi_h = st.shipout.cur_h;
@@ -875,9 +914,13 @@ impl OutChar {
     }
 }
 
-fn chars_out(st: &mut EngineState, first: OutChar) -> Result<(MemPtr, LinkSlot), Abort> {
-    synch_h(st)?;
-    synch_v(st)?;
+fn chars_out(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    first: OutChar,
+) -> Result<(MemPtr, LinkSlot), Abort> {
+    synch_h(st, env)?;
+    synch_v(st, env)?;
     let mut cur = first;
     loop {
         let f = cur.font;
@@ -887,9 +930,9 @@ fn chars_out(st: &mut EngineState, first: OutChar) -> Result<(MemPtr, LinkSlot),
         {
             c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
         }
-        dvi_font_select(st, f)?;
+        dvi_font_select(st, env, f)?;
         if st.fonts.char_exists(f, i32::from(c)) {
-            st.shipout.dvi.set_char(c)?;
+            st.shipout.dvi.set_char(env, c)?;
             st.shipout.cur_h += st.fonts.font_character_width(f, i32::from(c));
         }
         match st.mem.as_char(cur.next) {
@@ -897,13 +940,14 @@ fn chars_out(st: &mut EngineState, first: OutChar) -> Result<(MemPtr, LinkSlot),
             None => break,
         }
     }
-    synctex_current(st);
+    synctex_current(st, env);
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok((cur.next, LinkSlot::Node(cur.node)))
 }
 
 fn hlist_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
@@ -916,7 +960,7 @@ fn hlist_out(
 
     // A raw cursor: nodes get retyped in place.
     let mut p = st.mem[this_box].list_ptr;
-    let save_loc = st.shipout.dvi.enter_level()?;
+    let save_loc = st.shipout.dvi.enter_level(env)?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = LinkSlot::List(this_box);
     st.mem.push_lr(&mut lr.ptr, MathCode::Before)?;
@@ -949,46 +993,51 @@ fn hlist_out(
     }
 
     let mut left_edge = st.shipout.cur_h;
-    synctex_hlist(st, this_box);
+    synctex_hlist(st, env, this_box);
 
     while let Some(here) = p {
         if let Some(ch) = st.mem.as_char(p) {
-            (p, prev_p) = chars_out(st, OutChar::of_char(&st.mem, ch))?;
+            (p, prev_p) = chars_out(st, env, OutChar::of_char(&st.mem, ch))?;
             continue;
         }
         match st.mem.classify(here).or_confusion("hlistout")? {
-            AnyNode::Box(b) => hlist_box_out(st, lr, b, base_line)?,
+            AnyNode::Box(b) => hlist_box_out(st, env, lr, b, base_line)?,
             AnyNode::Rule(rule) => {
                 let dims = RuleDims::of(&st.mem, rule);
-                hlist_rule_out(st, this_box, base_line, rule.idx(), dims)?;
+                hlist_rule_out(st, env, this_box, base_line, rule.idx(), dims)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::NativeWord(word)) => {
                     let actual_text =
                         whatsit.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::NativeWordAt);
-                    native_word_out(st, word, actual_text)?
+                    native_word_out(st, env, word, actual_text)?
                 }
-                Some(WhatsitVariant::Glyph(glyph)) => glyph_out(st, glyph)?,
+                Some(WhatsitVariant::Glyph(glyph)) => glyph_out(st, env, glyph)?,
                 Some(WhatsitVariant::Pic(pic)) => {
                     st.shipout.cur_v = base_line;
                     let edge = st.shipout.cur_h + st.mem[pic].width;
-                    with_saved_dvi_pos(st, |st| pic_out(st, pic))?;
+                    with_saved_dvi_pos(st, env, |st, env| pic_out(st, env, pic))?;
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
                 }
                 Some(WhatsitVariant::SavePos(_)) => st.shipout.pdf_save_pos(),
-                _ => out_what(st, whatsit)?,
+                _ => out_what(st, env, whatsit)?,
             },
             AnyNode::Glue(glue) => {
-                hlist_glue_out(st, lr, this_box, base_line, left_edge, glue, &mut rounding)?
+                let frame = HlistFrame {
+                    this_box,
+                    base_line,
+                    left_edge,
+                };
+                hlist_glue_out(st, env, lr, frame, glue, &mut rounding)?;
             }
             AnyNode::MarginKern(kern) => st.shipout.cur_h += st.mem[kern].width,
             AnyNode::Kern(kern) => {
-                synctex_kern(st, kern, this_box);
+                synctex_kern(st, env, kern, this_box);
                 st.shipout.cur_h += st.mem[kern].width;
             }
             AnyNode::Math(math) => {
-                synctex_math(st, math);
+                synctex_math(st, env, math);
                 let math_width = st.mem[math].width;
                 let code = st.mem[math].code()?;
                 if code.is_end() {
@@ -1019,7 +1068,7 @@ fn hlist_out(
             AnyNode::Ligature(ligature) => {
                 st.fonts.xtx_ligature_present = true;
                 let first = OutChar::of_ligature(&st.mem, ligature);
-                (p, prev_p) = chars_out(st, first)?;
+                (p, prev_p) = chars_out(st, env, first)?;
                 continue;
             }
             AnyNode::Style(style) => {
@@ -1034,7 +1083,7 @@ fn hlist_out(
         p = here.link(&st.mem);
     }
 
-    synctex_tsilh(st, this_box);
+    synctex_tsilh(st, env, this_box);
 
     while st.mem.lr_code(lr.ptr) != Some(MathCode::Before) {
         if st.mem.lr_code(lr.ptr).is_some_and(MathCode::is_lr) {
@@ -1046,20 +1095,21 @@ fn hlist_out(
     if st.mem[this_box].lr() == BoxLr::Dlist {
         lr.dir = Dir::Rtl;
     }
-    st.mem.pop_dvi_level(&mut st.shipout, save_loc)
+    st.mem.pop_dvi_level(env, &mut st.shipout, save_loc)
 }
 
 fn hlist_box_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     b: NodePtr<BoxNode>,
     base_line: Scaled,
 ) -> Result<(), Abort> {
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            synctex_void_vlist(st, b);
+            synctex_void_vlist(st, env, b);
         } else {
-            synctex_void_hlist(st, b);
+            synctex_void_hlist(st, env, b);
         }
         st.shipout.cur_h += st.mem[b].width;
         return Ok(());
@@ -1069,7 +1119,7 @@ fn hlist_box_out(
     if lr.dir == Dir::Rtl {
         st.shipout.cur_h = edge;
     }
-    with_saved_dvi_pos(st, |st| ship_box(st, lr, b))?;
+    with_saved_dvi_pos(st, env, |st, env| ship_box(st, env, lr, b))?;
     st.shipout.cur_h = edge;
     st.shipout.cur_v = base_line;
     Ok(())
@@ -1107,6 +1157,7 @@ fn reverse_segment(
 
 fn vlist_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
@@ -1114,9 +1165,9 @@ fn vlist_out(
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = st.mem[this_box].list_ptr;
     let upwards = st.mem[this_box].upwards();
-    let save_loc = st.shipout.dvi.enter_level()?;
+    let save_loc = st.shipout.dvi.enter_level(env)?;
     let left_edge = st.shipout.cur_h;
-    synctex_vlist(st, this_box);
+    synctex_vlist(st, env, this_box);
     if upwards {
         st.shipout.cur_v += st.mem[this_box].depth;
     } else {
@@ -1129,33 +1180,33 @@ fn vlist_out(
             return Err(Abort::Confusion("vlistout"));
         }
         match st.mem.classify(here).or_confusion("vlistout")? {
-            AnyNode::Box(b) => vlist_box_out(st, lr, b, left_edge, upwards)?,
+            AnyNode::Box(b) => vlist_box_out(st, env, lr, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
                 let dims = RuleDims::of(&st.mem, rule);
-                vlist_rule_out(st, lr, this_box, left_edge, upwards, dims)?;
+                vlist_rule_out(st, env, lr, this_box, left_edge, upwards, dims)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::Glyph(glyph)) => {
                     let glyph = st.mem[glyph];
                     st.shipout.cur_v += glyph.height;
                     st.shipout.cur_h = left_edge;
-                    synch_h(st)?;
-                    synch_v(st)?;
-                    dvi_font_select(st, glyph.font)?;
-                    st.shipout.dvi.set_glyph(Scaled::ZERO, glyph.glyph)?;
+                    synch_h(st, env)?;
+                    synch_v(st, env)?;
+                    dvi_font_select(st, env, glyph.font)?;
+                    st.shipout.dvi.set_glyph(env, Scaled::ZERO, glyph.glyph)?;
                     st.shipout.cur_v += glyph.depth;
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitVariant::Pic(pic)) => {
-                    let (_, save_v) = with_saved_dvi_pos(st, |st| {
+                    let (_, save_v) = with_saved_dvi_pos(st, env, |st, env| {
                         st.shipout.cur_v += st.mem[pic].height;
-                        pic_out(st, pic)
+                        pic_out(st, env, pic)
                     })?;
                     st.shipout.cur_v = save_v + st.mem[pic].depth;
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitVariant::SavePos(_)) => st.shipout.pdf_save_pos(),
-                _ => out_what(st, whatsit)?,
+                _ => out_what(st, env, whatsit)?,
             },
             AnyNode::Glue(glue) => {
                 let spec = st.mem[glue].glue_ptr;
@@ -1168,7 +1219,7 @@ fn vlist_out(
                                 dp: Scaled::ZERO,
                                 wd: st.mem[rule].width.to_scaled(),
                             };
-                            vlist_rule_out(st, lr, this_box, left_edge, upwards, dims)?;
+                            vlist_rule_out(st, env, lr, this_box, left_edge, upwards, dims)?;
                         }
                         Leader::Box(leader) => {
                             let leaders = BoxLeaders {
@@ -1176,7 +1227,7 @@ fn vlist_out(
                                 kind,
                                 size: ht,
                             };
-                            vlist_leaders_out(st, lr, leaders, left_edge, top_edge, upwards)?
+                            vlist_leaders_out(st, env, lr, leaders, left_edge, top_edge, upwards)?
                         }
                     }
                 } else {
@@ -1195,12 +1246,13 @@ fn vlist_out(
         p = here.link(&st.mem);
     }
 
-    synctex_tsilv(st, this_box);
-    st.mem.pop_dvi_level(&mut st.shipout, save_loc)
+    synctex_tsilv(st, env, this_box);
+    st.mem.pop_dvi_level(env, &mut st.shipout, save_loc)
 }
 
 fn vlist_box_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     b: NodePtr<BoxNode>,
     left_edge: Scaled,
@@ -1214,9 +1266,9 @@ fn vlist_box_out(
     }
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            synctex_void_vlist(st, b);
+            synctex_void_vlist(st, env, b);
         } else {
-            synctex_void_hlist(st, b);
+            synctex_void_hlist(st, env, b);
         }
         if upwards {
             st.shipout.cur_v -= height;
@@ -1225,14 +1277,14 @@ fn vlist_box_out(
         }
         return Ok(());
     }
-    synch_v(st)?;
+    synch_v(st, env)?;
     let shift = st.mem[b].shift_amount;
     st.shipout.cur_h = if lr.dir == Dir::Rtl {
         left_edge - shift
     } else {
         left_edge + shift
     };
-    let (_, save_v) = with_saved_dvi_pos(st, |st| ship_box(st, lr, b))?;
+    let (_, save_v) = with_saved_dvi_pos(st, env, |st, env| ship_box(st, env, lr, b))?;
     st.shipout.cur_v = if upwards {
         save_v - st.mem[b].height
     } else {
@@ -1244,10 +1296,11 @@ fn vlist_box_out(
 
 fn with_saved_dvi_pos(
     st: &mut EngineState,
-    out: impl FnOnce(&mut EngineState) -> Result<(), Abort>,
+    env: &mut EngineEnv,
+    out: impl FnOnce(&mut EngineState, &mut EngineEnv) -> Result<(), Abort>,
 ) -> Result<(Scaled, Scaled), Abort> {
     let (h, v) = (st.shipout.dvi_h, st.shipout.dvi_v);
-    out(st)?;
+    out(st, env)?;
     st.shipout.dvi_h = h;
     st.shipout.dvi_v = v;
     Ok((h, v))
@@ -1255,6 +1308,7 @@ fn with_saved_dvi_pos(
 
 fn vlist_leaders_out(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lr: &mut LrState,
     leaders: BoxLeaders,
     left_edge: Scaled,
@@ -1294,10 +1348,11 @@ fn vlist_leaders_out(
         } else {
             left_edge + shift
         };
-        synch_h(st)?;
+        synch_h(st, env)?;
         st.shipout.cur_v += st.mem[leader].height;
-        synch_v(st)?;
-        let (_, save_v) = with_saved_dvi_pos(st, |st| ship_leader_box(st, lr, leader))?;
+        synch_v(st, env)?;
+        let (_, save_v) =
+            with_saved_dvi_pos(st, env, |st, env| ship_leader_box(st, env, lr, leader))?;
         st.shipout.cur_h = left_edge;
         st.shipout.cur_v = save_v - st.mem[leader].height + leader_ht + lx;
     }
@@ -1314,7 +1369,7 @@ pub(crate) struct Movement {
 }
 
 impl ShipoutState {
-    fn movement(&mut self, w: Scaled, axis: Axis) -> Result<(), Abort> {
+    fn movement(&mut self, env: &mut EngineEnv, w: Scaled, axis: Axis) -> Result<(), Abort> {
         let location = self.dvi.pos();
         let moves = match axis {
             Axis::Down => &mut self.down_moves,
@@ -1360,7 +1415,7 @@ impl ShipoutState {
 
         let Some(found) = found else {
             moves[top].state = MOV_YZ_OK;
-            return self.dvi.movement(axis, w);
+            return self.dvi.movement(env, axis, w);
         };
 
         moves[top].state = moves[found].state;
@@ -1376,7 +1431,7 @@ impl ShipoutState {
                 m.state = MOV_D_FIXED;
             }
         }
-        self.dvi.movement_by_reg(axis, reg)
+        self.dvi.movement_by_reg(env, axis, reg)
     }
 
     fn prune_movements(&mut self, l: i32) {
@@ -1388,17 +1443,21 @@ impl ShipoutState {
     }
 }
 
-pub(crate) fn finalize_dvi_file(st: &mut EngineState) -> Result<(), Abort> {
-    if st.shipout.dvi.close_open_page(st.scanner.logical_clock)? {
+pub(crate) fn finalize_dvi_file(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    if st
+        .shipout
+        .dvi
+        .close_open_page(env, st.scanner.logical_clock)?
+    {
         st.shipout.total_pages += 1;
     }
 
     if st.shipout.total_pages == 0 {
-        print_nl(st, "");
-        begin_warning(st);
-        print(st, "No pages of output");
-        end_capture(st);
-        print_char(st, b'.');
+        print_nl(st, env, "");
+        begin_warning(st, env);
+        print(st, env, "No pages of output");
+        end_capture(st, env);
+        print_char(st, env, b'.');
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
@@ -1406,46 +1465,47 @@ pub(crate) fn finalize_dvi_file(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
 
-    st.shipout.dvi.begin_postamble()?;
-    prepare_mag(st)?;
+    st.shipout.dvi.begin_postamble(env)?;
+    prepare_mag(st, env)?;
     let mag = st.eqtb.int_par(IntPar::Mag);
     let s = &mut st.shipout;
-    s.dvi.end_postamble(mag, s.max_v, s.max_h, s.total_pages)?;
+    s.dvi
+        .end_postamble(env, mag, s.max_v, s.max_h, s.total_pages)?;
 
     for f in st.fonts.font_ptr.loaded().rev() {
         if st.fonts.font_used[f] {
-            dvi_font_def(st, f)?;
+            dvi_font_def(st, env, f)?;
         }
     }
     st.fonts.font_ptr = NULL_FONT;
 
     st.shipout
         .dvi
-        .finish(id_byte(st.config.semantic_pagination_enabled))?;
+        .finish(env, id_byte(st.config.semantic_pagination_enabled))?;
 
-    let k = u8::from(output_close(st.shipout.dvi.file));
+    let k = u8::from(env.close_xdv());
     if k == 0 {
-        print_nl(st, "Output written on ");
-        print(st, st.shipout.output_file_name);
-        print(st, " (");
-        print_int(st, st.shipout.total_pages);
+        print_nl(st, env, "Output written on ");
+        print(st, env, st.shipout.output_file_name);
+        print(st, env, " (");
+        print_int(st, env, st.shipout.total_pages);
         if st.shipout.total_pages != 1 {
-            print(st, " pages");
+            print(st, env, " pages");
         } else {
-            print(st, " page");
+            print(st, env, " page");
         }
-        print(st, ", ");
-        print_int(st, st.shipout.dvi.pos());
-        print(st, " bytes).");
+        print(st, env, ", ");
+        print_int(st, env, st.shipout.dvi.pos());
+        print(st, env, " bytes).");
     } else {
-        print_nl(st, "Error ");
-        print_int(st, i32::from(k));
-        print(st, " (");
-        print(st, &strerror(i32::from(k))[..]);
-        print(st, ") generating output;");
-        print_nl(st, "file ");
-        print(st, st.shipout.output_file_name);
-        print(st, " may not be valid.");
+        print_nl(st, env, "Error ");
+        print_int(st, env, i32::from(k));
+        print(st, env, " (");
+        print(st, env, &strerror(i32::from(k))[..]);
+        print(st, env, ") generating output;");
+        print_nl(st, env, "file ");
+        print(st, env, st.shipout.output_file_name);
+        print(st, env, " may not be valid.");
         // XeTeX also sets history to OUTPUT_FAILURE here.
     }
     Ok(())
@@ -1627,13 +1687,10 @@ pub(crate) struct ShipoutState {
     pub output_can_end: bool,
     pub pdf_last_x_pos: i32,
     pub pdf_last_y_pos: i32,
-    pub write_file: [usize; 16],
     pub write_open: [bool; 18],
     pub write_name: [Option<Vec<u8>>; 16],
     /// Code units emitted before the current replay fence.
     pub write_prefix: [Vec<i32>; 16],
-    pub rust_stdout: usize,
-    pub log_file: usize,
     /// Transcript bytes written so far, captured with every checkpoint.
     pub log_bytes: u64,
     /// Where this operation's transcript continues the previous one, if it
@@ -1666,16 +1723,26 @@ pub(crate) struct ShipoutState {
     pub dvi_f: FontId,
 }
 
+/// The C library's message for error number `errnum`.
+fn strerror(errnum: i32) -> Vec<u8> {
+    // SAFETY: strerror returns a NUL-terminated message, copied before any other call.
+    unsafe { std::ffi::CStr::from_ptr(libc::strerror(errnum)) }
+        .to_bytes()
+        .to_vec()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::test_env;
 
     #[test]
     fn a_repeated_movement_reuses_a_register() {
+        let env = &mut test_env();
         let mut s = ShipoutState::default();
         s.dvi.init();
         for w in [5, 7, 5] {
-            s.movement(Scaled::from_raw(w), Axis::Down).unwrap();
+            s.movement(env, Scaled::from_raw(w), Axis::Down).unwrap();
         }
         // down1 5 became y1 5, down1 7 stays, the repeat is y0.
         assert_eq!(&s.dvi.digest_view().1[..5], [162, 5, 157, 7, 161]);

@@ -7,7 +7,7 @@
 use crate::errors::DefinitelySame;
 
 pub use texyon_engine_xetex::{
-    Diagnostic, DiagnosticKind, EngineCancellation, EngineFrame, EnginePreviewConfig,
+    Diagnostic, DiagnosticKind, EngineCancellation, EngineEnv, EngineFrame, EnginePreviewConfig,
     IncrementalXeTeXSession, PageExecution, PageRange, SourceError, SourceIdentity, SourcePath,
     SourceRevision, SourceSnapshot, SourceUpdate, SyncIndex, SyncRect, TexEngine, TexOutcome,
 };

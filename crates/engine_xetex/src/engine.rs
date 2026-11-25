@@ -23,7 +23,7 @@ use crate::build::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::build::main_control::{main_control, main_control_resume};
 use crate::build::packaging::{CurMarks, MarksAction};
 use crate::build::pagebuilder::{PageContents, initialize_pagebuilder_variables};
-use crate::ffi::bridge::{enter, output_open_stdout, set_error_message};
+use crate::env::EngineEnv;
 use crate::ffi::clock::{get_date_and_time, get_seconds_and_micros, init_start_time};
 use crate::files::format_io::{load_fmt_file, store_fmt_file};
 use crate::files::io::{
@@ -39,6 +39,7 @@ use crate::memory::mem::{
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, PageInsNode};
 use crate::preview::journal::{Journaled, JournaledVec};
+use crate::print::errors::set_error_message;
 use crate::print::errors::{Abort, InteractionMode, OrConfusion};
 use crate::print::{
     Selector, print, print_char, print_command, print_esc, print_int, print_nl, show_save_groups,
@@ -141,7 +142,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, 
     Ok(cs)
 }
 
-pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn final_cleanup(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let dump = st.scanner.cur == Command::Stop { dump: true };
 
     if !dump {
@@ -149,43 +150,43 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.strings.job_name == StrNumber::NONE {
-        open_log_file(st)?;
+        open_log_file(st, env)?;
     }
 
     while !st.input.input_stack.is_empty() {
         if st.input.cur_input.state == TOKEN_LIST {
             end_token_list(st)?;
         } else {
-            end_file_reading(st)?;
+            end_file_reading(st, env)?;
         }
     }
 
     while st.input.open_parens > 0 {
-        print(st, " )");
+        print(st, env, " )");
         st.input.open_parens -= 1;
     }
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        print_nl(st, b'(');
-        print_esc(st, "end occurred ");
-        print(st, "inside a group at level ");
-        print_int(st, i32::from(cur_level) - 1);
-        print_char(st, b')');
-        show_save_groups(st);
+        print_nl(st, env, b'(');
+        print_esc(st, env, "end occurred ");
+        print(st, env, "inside a group at level ");
+        print_int(st, env, i32::from(cur_level) - 1);
+        print_char(st, env, b')');
+        show_save_groups(st, env);
     }
 
     while let Some(cond) = st.scanner.conds.pop() {
-        print_nl(st, b'(');
-        print_esc(st, "end occurred ");
-        print(st, "when ");
-        print_command(st, Command::IfTest(st.scanner.cur_if));
+        print_nl(st, env, b'(');
+        print_esc(st, env, "end occurred ");
+        print(st, env, "when ");
+        print_command(st, env, Command::IfTest(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
-            print(st, " on line ");
-            print_int(st, if_line);
+            print(st, env, " on line ");
+            print_int(st, env, if_line);
         }
-        print(st, " was incomplete)");
+        print(st, env, " was incomplete)");
         st.scanner.if_line = cond.if_line;
         st.scanner.cur_if = cond.cur_if;
     }
@@ -196,7 +197,11 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         && st.shipout.selector == Selector::TermAndLog
     {
         st.shipout.selector = Selector::TermOnly;
-        print_nl(st, "(see the transcript file for additional information)");
+        print_nl(
+            st,
+            env,
+            "(see the transcript file for additional information)",
+        );
         st.shipout.selector = Selector::TermAndLog;
     }
 
@@ -204,7 +209,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     if !st.config.in_initex_mode {
-        print_nl(st, "(\\dump is performed only by INITEX)");
+        print_nl(st, env, "(\\dump is performed only by INITEX)");
         return Ok(());
     }
 
@@ -226,7 +231,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.delete_glue_ref(spec);
     }
 
-    store_fmt_file(st)
+    store_fmt_file(st, env)
 }
 
 fn initialize_more_variables(st: &mut EngineState) {
@@ -498,16 +503,14 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
 /// A Rust panic is caught and turned into a `HISTORY_FATAL_ERROR` return with
 /// a surfaced message instead of unwinding into the host.
 pub(crate) fn run_engine(
-    api: &mut texyon_bridge_core::CoreBridgeState,
+    env: &mut EngineEnv,
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    let _bridge = enter(api);
-
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
-        run_engine_inner(config, dump_name, input_file_name, build_date)
+        run_engine_inner(env, config, dump_name, input_file_name, build_date)
     }));
     match outcome {
         Ok(rv) => rv,
@@ -524,6 +527,7 @@ pub(crate) fn run_engine(
 }
 
 fn run_engine_inner(
+    env: &mut EngineEnv,
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
@@ -539,8 +543,8 @@ fn run_engine_inner(
     let mut st = Box::new(EngineState::default());
     st.config = config;
 
-    match initialize_engine(&mut st, dump_name, build_date) {
-        InitOutcome::Ready => run_document_to_end(&mut st, input_file_name),
+    match initialize_engine(&mut st, env, dump_name, build_date) {
+        InitOutcome::Ready => run_document_to_end(&mut st, env, input_file_name),
         InitOutcome::Terminate(history) => history,
     }
 }
@@ -580,10 +584,11 @@ impl FontState {
 /// input stack, so batch and resident sessions share this path.
 pub(crate) fn initialize_engine(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     dump_name: &str,
     build_date: libc::time_t,
 ) -> InitOutcome {
-    st.shipout.rust_stdout = output_open_stdout();
+    env.open_terminal();
 
     if st.config.file_line_error_style_p < 0 {
         st.config.file_line_error_style_p = 0;
@@ -665,15 +670,15 @@ pub(crate) fn initialize_engine(
     initialize_more_variables(st);
     if st.config.in_initex_mode {
         if let Err(a) = get_strings_started(st) {
-            return InitOutcome::Terminate(a.into_history(st));
+            return InitOutcome::Terminate(a.into_history(st, env));
         }
         let format_ident = match st.strings.make_tex_string(" (INITEX)") {
             Ok(v) => v,
-            Err(e) => return InitOutcome::Terminate(e.into_history(st)),
+            Err(e) => return InitOutcome::Terminate(e.into_history(st, env)),
         };
         initialize_more_initex_variables(st, format_ident);
         if let Err(e) = initialize_primitives(st) {
-            return InitOutcome::Terminate(e.into_history(st));
+            return InitOutcome::Terminate(e.into_history(st, env));
         }
         st.strings.init_str_ptr = st.strings.str_ptr;
         st.strings.init_pool_ptr = st.strings.pool_ptr;
@@ -726,9 +731,9 @@ pub(crate) fn initialize_engine(
     st.eqtb.no_new_control_sequence = true;
 
     if !st.config.in_initex_mode {
-        match load_fmt_file(st, dump_name) {
+        match load_fmt_file(st, env, dump_name) {
             Ok(()) => KnownCs::resolve(st),
-            Err(a) => return InitOutcome::Terminate(a.into_history(st)),
+            Err(a) => return InitOutcome::Terminate(a.into_history(st, env)),
         }
     }
 
@@ -768,7 +773,7 @@ pub(crate) fn initialize_engine(
 
         let nullfont_name = match st.strings.make_tex_string("nullfont") {
             Ok(v) => v,
-            Err(e) => return InitOutcome::Terminate(e.into_history(st)),
+            Err(e) => return InitOutcome::Terminate(e.into_history(st, env)),
         };
         let fonts = &mut st.fonts;
         let f = NULL_FONT;
@@ -811,18 +816,18 @@ pub(crate) fn initialize_engine(
     InitOutcome::Ready
 }
 
-fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
+fn run_document_to_end(st: &mut EngineState, env: &mut EngineEnv, input_file_name: &str) -> i32 {
     let result = (|| {
-        start_input(st, Some(input_file_name))?;
+        start_input(st, env, Some(input_file_name))?;
         st.errors.history = HISTORY_SPOTLESS;
-        main_control(st)?;
-        final_cleanup(st)?;
-        close_files_and_terminate(st)
+        main_control(st, env)?;
+        final_cleanup(st, env)?;
+        close_files_and_terminate(st, env)
     })();
     if let Err(a) = result {
-        return a.into_history(st);
+        return a.into_history(st, env);
     }
-    cleanup(st);
+    cleanup(st, env);
     st.errors.history
 }
 
@@ -831,35 +836,37 @@ fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
 /// close operation resources and rewind rung zero.
 pub(crate) fn run_resident_document(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     input_file_name: &str,
 ) -> Result<i32, Abort> {
-    start_input(st, Some(input_file_name))?;
+    start_input(st, env, Some(input_file_name))?;
     st.errors.history = HISTORY_SPOTLESS;
-    main_control(st)?;
-    final_cleanup(st)?;
-    close_files_and_terminate(st)?;
+    main_control(st, env)?;
+    final_cleanup(st, env)?;
+    close_files_and_terminate(st, env)?;
     Ok(st.errors.history)
 }
 
 pub(crate) fn resume_resident_document(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     resume_pending_command: bool,
 ) -> Result<i32, Abort> {
-    reopen_resident_outputs(st)?;
-    main_control_resume(st, resume_pending_command)?;
-    final_cleanup(st)?;
-    close_files_and_terminate(st)?;
+    reopen_resident_outputs(st, env)?;
+    main_control_resume(st, env, resume_pending_command)?;
+    final_cleanup(st, env)?;
+    close_files_and_terminate(st, env)?;
     Ok(st.errors.history)
 }
 
-pub(crate) fn release_operation_inputs(st: &mut EngineState) {
+pub(crate) fn release_operation_inputs(st: &mut EngineState, env: &mut EngineEnv) {
     for slot in st
         .input
         .input_file
         .iter_mut()
         .chain(&mut st.input.read_file)
     {
-        let _ = u_close(mem::take(slot));
+        let _ = u_close(env, mem::take(slot));
     }
 }
 
@@ -876,7 +883,7 @@ fn initial_random_seed(
     }
 }
 
-pub(crate) fn cleanup(st: &mut EngineState) {
+pub(crate) fn cleanup(st: &mut EngineState, env: &mut EngineEnv) {
     st.disarm();
     pdf_files_close();
     forget_probed_pdfs();
@@ -891,7 +898,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
 
     for i in 1..=st.input.in_open {
         // Teardown has begun, so a serious close error is absorbed.
-        let _ = u_close(mem::take(&mut st.input.input_file[i]));
+        let _ = u_close(env, mem::take(&mut st.input.input_file[i]));
     }
     for slot in st.input.read_file.iter_mut() {
         *slot = InputSlot::Empty;

@@ -148,9 +148,17 @@ fn test_format_generation(texname: &str, fmtname: &str, sha256: &str) {
     // Run the engine!
     let hooks = {
         let io = if DEBUG {
-            IoStack::new(vec![&mut stdout, &mut fs_primary, &mut fs_support])
+            IoStack::new(vec![
+                Box::new(&mut stdout),
+                Box::new(&mut fs_primary),
+                Box::new(&mut fs_support),
+            ])
         } else {
-            IoStack::new(vec![&mut mem, &mut fs_primary, &mut fs_support])
+            IoStack::new(vec![
+                Box::new(&mut mem),
+                Box::new(&mut fs_primary),
+                Box::new(&mut fs_support),
+            ])
         };
         let mut hooks = FormatTestDriver::new(io);
         let mut status = NoopStatusBackend::default();

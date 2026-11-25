@@ -53,7 +53,7 @@ impl FcBackend {
         &mut self,
         maps: &mut FontMaps,
         names: &[CString],
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         if names.is_empty() {
             return;
@@ -91,7 +91,11 @@ impl FontManagerBackend for FcBackend {
         }
     }
 
-    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo, io: &mut CoreBridgeState<'_>) {
+    fn get_op_size_rec_and_style_flags(
+        &self,
+        font: &mut FontInfo,
+        io: &mut CoreBridgeState<'_, '_>,
+    ) {
         base_get_op_size_rec_and_style_flags(font, io);
 
         if font.weight == 0 && font.width == 0 {
@@ -112,7 +116,7 @@ impl FontManagerBackend for FcBackend {
         &mut self,
         maps: &mut FontMaps,
         name: &CStr,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         if self.cached_all {
             return;

@@ -7,10 +7,9 @@ use crate::base::token::{Token, TokenList};
 use crate::base::units::{PoolPos, StrNumber};
 use crate::build::hyphenation::norm_min;
 use crate::build::main_control::new_graf;
+use crate::env::EngineEnv;
 use crate::ffi::clock::get_seconds_and_micros;
-use crate::files::io::{
-    AUTO, FileSlot, scan_file_name, scan_name_path, set_input_file_encoding, with_slot_file,
-};
+use crate::files::io::{AUTO, FileSlot, scan_file_name, scan_name_path, set_slot_encoding};
 use crate::fonts::ext::get_encoding_mode_and_info;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::mem::TEX_NULL;
@@ -65,19 +64,23 @@ fn special_list(st: &mut EngineState, b: PoolPos) -> Result<TokenList, Abort> {
     st.mem.tokens.finish(out)
 }
 
-pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn insert_src_special(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
     let b = make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let toklist = special_list(st, b)?;
-    begin_token_list(st, toklist, TokenType::Inserted)?;
+    begin_token_list(st, env, toklist, TokenType::Inserted)?;
     remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
 
-pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abort> {
+pub(crate) fn insert_special(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    text: &str,
+) -> Result<(), Abort> {
     let start_pool = st.strings.pool_ptr;
     let text = text.as_bytes();
     if st.strings.pool_ptr + text.len() as i32 >= st.strings.pool_size {
@@ -88,7 +91,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     }
 
     let toklist = special_list(st, start_pool)?;
-    begin_token_list(st, toklist, TokenType::Inserted)?;
+    begin_token_list(st, env, toklist, TokenType::Inserted)?;
     Ok(())
 }
 
@@ -99,11 +102,11 @@ fn append_whatsit<K: WhatsitKind + Node>(
     st.input.cur_list.append_whatsit(&mut st.mem, subtype)
 }
 
-fn scan_write_stream(st: &mut EngineState, open: bool) -> Result<i32, Abort> {
+fn scan_write_stream(st: &mut EngineState, env: &mut EngineEnv, open: bool) -> Result<i32, Abort> {
     Ok(if open {
-        scan_four_bit_int(st)?
+        scan_four_bit_int(st, env)?
     } else {
-        match scan_int(st)? {
+        match scan_int(st, env)? {
             n if n < 0 => 17,
             n if n > 15 && n != 18 => 16,
             n => n,
@@ -111,13 +114,17 @@ fn scan_write_stream(st: &mut EngineState, open: bool) -> Result<i32, Abort> {
     })
 }
 
-fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<WhatsitNode>, Abort> {
+fn io_whatsit(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: ExtensionCode,
+) -> Result<NodePtr<WhatsitNode>, Abort> {
     Ok(match code {
         ExtensionCode::Open => {
             let w = append_whatsit::<OpenNode>(st, WhatsitSubtype::Open)?;
-            st.mem[w].stream = scan_write_stream(st, true)?;
-            scan_optional_equals(st)?;
-            let file = scan_file_name(st)?.file;
+            st.mem[w].stream = scan_write_stream(st, env, true)?;
+            scan_optional_equals(st, env)?;
+            let file = scan_file_name(st, env)?.file;
             let open = &mut st.mem[w];
             open.name = file.name;
             open.area = file.area;
@@ -127,30 +134,34 @@ fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<Whats
         ExtensionCode::Write => {
             let k = st.scanner.cur_cs;
             let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Write)?;
-            st.mem[w].stream = scan_write_stream(st, false)?;
+            st.mem[w].stream = scan_write_stream(st, env, false)?;
             st.scanner.cur_cs = k;
-            scan_toks(st, false, false)?;
+            scan_toks(st, env, false, false)?;
             st.mem[w].tokens = st.scanner.def_ref;
             w.whatsit()
         }
         _ => {
             let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Close)?;
-            st.mem[w].stream = scan_write_stream(st, false)?;
+            st.mem[w].stream = scan_write_stream(st, env, false)?;
             st.mem[w].tokens = TokenList::NULL;
             w.whatsit()
         }
     })
 }
 
-pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<(), Abort> {
+pub(crate) fn do_extension(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: ExtensionCode,
+) -> Result<(), Abort> {
     let mode = st.input.cur_list.mode;
     match code {
         ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close => {
-            io_whatsit(st, code)?;
+            io_whatsit(st, env, code)?;
         }
 
         ExtensionCode::Special => {
-            let late = scan_keyword(st, "shipout")?;
+            let late = scan_keyword(st, env, "shipout")?;
             let subtype = if late {
                 WhatsitSubtype::LateSpecial
             } else {
@@ -158,12 +169,12 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
             };
             let w = append_whatsit::<WriteNode>(st, subtype)?;
             st.mem[w].stream = TEX_NULL;
-            scan_toks(st, false, !late)?;
+            scan_toks(st, env, false, !late)?;
             st.mem[w].tokens = st.scanner.def_ref;
         }
 
         ExtensionCode::Immediate => {
-            get_x_token(st)?;
+            get_x_token(st, env)?;
             let io_code = match st.scanner.cur {
                 Command::Extension(
                     c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
@@ -172,8 +183,8 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
             };
             if let Some(io_code) = io_code {
                 let p = st.input.cur_list.tail;
-                let w = io_whatsit(st, io_code)?;
-                out_what(st, w)?;
+                let w = io_whatsit(st, env, io_code)?;
+                out_what(st, env, w)?;
                 st.mem.flush_node_list(Some(st.input.cur_list.tail))?;
                 st.input.cur_list.tail = p;
                 p.set_link(&mut st.mem, None);
@@ -184,10 +195,10 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
 
         ExtensionCode::SetLanguage => {
             if !mode.is_horizontal() {
-                report_illegal_case(st)?;
+                report_illegal_case(st, env)?;
             } else {
                 let w = append_whatsit::<LanguageNode>(st, WhatsitSubtype::Language)?;
-                let lang = match scan_int(st)? {
+                let lang = match scan_int(st, env)? {
                     n @ 1..=255 => n,
                     _ => 0,
                 };
@@ -214,42 +225,44 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::SetRandomSeed => {
-            let seed = scan_int(st)?.wrapping_abs();
+            let seed = scan_int(st, env)?.wrapping_abs();
             st.random.reseed(seed);
         }
 
         ExtensionCode::PicFile | ExtensionCode::PdfFile => {
             if mode.is_math() {
-                report_illegal_case(st)?;
+                report_illegal_case(st, env)?;
             } else {
-                load_picture(st, code == ExtensionCode::PdfFile)?;
+                load_picture(st, env, code == ExtensionCode::PdfFile)?;
             }
         }
 
         ExtensionCode::Glyph => {
             if mode.is_vertical() {
                 back_input(st)?;
-                new_graf(st, true)?;
+                new_graf(st, env, true)?;
             } else if mode.is_math() {
-                report_illegal_case(st)?;
+                report_illegal_case(st, env)?;
             } else {
                 let cur_font = st.eqtb.cur_font();
                 let area = st.fonts.font_area[cur_font];
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return not_font_error_common(
                         st,
+                        env,
                         Command::Extension(ExtensionCode::Glyph),
                         cur_font,
                         "; not a native platform font",
                     );
                 }
                 let w = append_whatsit::<GlyphNode>(st, WhatsitSubtype::Glyph)?;
-                let n = scan_int(st)?;
+                let n = scan_int(st, env)?;
                 let glyph = match u16::try_from(n) {
                     Ok(glyph) => glyph,
                     Err(_) => {
                         error(
                             st,
+                            env,
                             ("Bad glyph number", " (", n, ")"),
                             &[
                                 "A glyph number must be between 0 and 65535.",
@@ -269,11 +282,12 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::InputEncoding => {
-            let name = scan_name_path(st)?;
-            let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
+            let name = scan_name_path(st, env)?;
+            let (enc_mode, info) = get_encoding_mode_and_info(st, env, &name)?;
             if enc_mode == AUTO {
                 error(
                     st,
+                    env,
                     "Encoding mode `auto' is not valid for \\XeTeXinputencoding",
                     &[
                         r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
@@ -281,24 +295,20 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                     ],
                 )?;
             } else {
-                // `\scantokens` occupies an input level without a UFile.
-                let slot = FileSlot::Input(st.input.in_open);
-                with_slot_file(st, slot, |st, f| {
-                    set_input_file_encoding(st, f, enc_mode, info)
-                })
-                .transpose()?;
+                // `\scantokens` occupies an input level without a file.
+                set_slot_encoding(st, env, FileSlot::Input(st.input.in_open), enc_mode, info)?;
             }
         }
 
         ExtensionCode::DefaultEncoding => {
-            let name = scan_name_path(st)?;
-            let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
+            let name = scan_name_path(st, env)?;
+            let (enc_mode, info) = get_encoding_mode_and_info(st, env, &name)?;
             st.eqtb.set_int_par(IntPar::XetexDefaultInputMode, enc_mode);
             st.eqtb.set_int_par(IntPar::XetexDefaultInputEncoding, info);
         }
 
         ExtensionCode::LinebreakLocale => {
-            let name = scan_file_name(st)?.file.name;
+            let name = scan_file_name(st, env)?.file.name;
             let locale = if st.strings.length(name) == 0 {
                 StrNumber::NONE
             } else {

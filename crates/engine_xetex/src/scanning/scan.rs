@@ -10,6 +10,7 @@ use crate::base::token::{Token, TokenList};
 use crate::base::units::{FontId, MemPtr, NodeType, Scaled};
 use crate::build::main_control::{BoxContext, SavedAlign, push_math};
 use crate::build::packaging::{CurMarks, MarkClasses, PackSpec};
+use crate::env::EngineEnv;
 use crate::memory::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, Stored};
 use crate::print::errors::{Abort, Capacity, OrConfusion, back_error, error, ins_error};
 use crate::scanning::cond_stack::CondStack;
@@ -52,11 +53,12 @@ impl EqtbState {
     }
 }
 
-pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn insert_dollar_sign(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = Token::math_shift(b'$');
     ins_error(
         st,
+        env,
         "Missing $ inserted",
         &[
             "I've inserted a begin-math/end-math symbol since I think",
@@ -65,8 +67,8 @@ pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
-    get_x_non_blank(st)?;
+pub(crate) fn scan_optional_equals(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_x_non_blank(st, env)?;
     if st.scanner.cur_tok != Token::other(b'=') {
         back_input(st)?;
     }
@@ -75,13 +77,14 @@ pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_spec(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     c: GroupCode,
     box_context: Option<BoxContext>,
 ) -> Result<(), Abort> {
-    let spec = if scan_keyword(st, "to")? {
-        PackSpec::Exactly(scan_dimen(st, false)?)
-    } else if scan_keyword(st, "spread")? {
-        PackSpec::Additional(scan_dimen(st, false)?)
+    let spec = if scan_keyword(st, env, "to")? {
+        PackSpec::Exactly(scan_dimen(st, env, false)?)
+    } else if scan_keyword(st, env, "spread")? {
+        PackSpec::Additional(scan_dimen(st, env, false)?)
     } else {
         PackSpec::NATURAL
     };
@@ -90,7 +93,7 @@ pub(crate) fn scan_spec(
     }
     st.save_stack.push_saved(Saved::Spec(spec));
     st.save_stack.new_save_level(c, st.mem.line)?;
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
     Ok(())
 }
 
@@ -103,7 +106,10 @@ fn round_decimals(digits: &[u8]) -> i32 {
     (a + 1) / 2
 }
 
-pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
+pub(crate) fn scan_rule_spec(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<NodePtr<RuleNode>, Abort> {
     let r = st.mem.new_rule()?;
     if st.scanner.cur.cmd() == Cmd::Vrule {
         st.mem[r].width = RuleDimen::Set(DEFAULT_RULE).into();
@@ -113,14 +119,14 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
         node.depth = RuleDimen::Set(Scaled::ZERO).into();
     }
     loop {
-        if scan_keyword(st, "width")? {
-            let d = scan_dimen(st, false)?;
+        if scan_keyword(st, env, "width")? {
+            let d = scan_dimen(st, env, false)?;
             st.mem[r].width = RuleDimen::Set(d).into();
-        } else if scan_keyword(st, "height")? {
-            let d = scan_dimen(st, false)?;
+        } else if scan_keyword(st, env, "height")? {
+            let d = scan_dimen(st, env, false)?;
             st.mem[r].height = RuleDimen::Set(d).into();
-        } else if scan_keyword(st, "depth")? {
-            let d = scan_dimen(st, false)?;
+        } else if scan_keyword(st, env, "depth")? {
+            let d = scan_dimen(st, env, false)?;
             st.mem[r].depth = RuleDimen::Set(d).into();
         } else {
             break;
@@ -130,10 +136,16 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Command) -> Result<bool, Abort> {
+pub(crate) fn eTeX_enabled(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    b: bool,
+    j: Command,
+) -> Result<bool, Abort> {
     if !b {
         error(
             st,
+            env,
             ("Improper ", j),
             &["Sorry, this optional e-TeX feature has been disabled."],
         )?;
@@ -141,10 +153,10 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Command) -> Result<
     Ok(b)
 }
 
-pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
+pub(crate) fn get_r_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<CsId, Abort> {
     loop {
         loop {
-            get_token(st)?;
+            get_token(st, env)?;
             if st.scanner.cur_tok != Token::SPACE {
                 break;
             }
@@ -163,6 +175,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
         st.scanner.cur_tok = Token::from_cs(Frozen::Protection.cs());
         ins_error(
             st,
+            env,
             "Missing control sequence inserted",
             &[
                 r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
@@ -179,40 +192,44 @@ pub(crate) fn math_code_from_tex(v: i32) -> i32 {
     set_class(v / 4096) + set_family((v % 4096) / 256) + (v % 256)
 }
 
-pub(crate) fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
-    let class = set_class(scan_math_class_int(st)?);
-    let family = set_family(scan_math_fam_int(st)?);
-    Ok(class + family + scan_usv_num(st)?)
+pub(crate) fn scan_umath_code(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
+    let class = set_class(scan_math_class_int(st, env)?);
+    let family = set_family(scan_math_fam_int(st, env)?);
+    Ok(class + family + scan_usv_num(st, env)?)
 }
 
-pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> {
+pub(crate) fn scan_math(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    p: MathSlot,
+) -> Result<(), Abort> {
     let c: i32;
     'main: loop {
-        get_x_non_blank_non_relax(st)?;
+        get_x_non_blank_non_relax(st, env)?;
         c = loop {
             break match st.scanner.cur {
                 Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch) => {
                     let mc = st.eqtb.math_code(ch.raw());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         fetch_cs_meaning(st, CsId::active(ch));
-                        x_token(st)?;
+                        x_token(st, env)?;
                         back_input(st)?;
                         continue 'main;
                     }
                     mc
                 }
                 Command::CharNum => {
-                    let c = scan_char_num(st)?;
+                    let c = scan_char_num(st, env)?;
                     st.scanner.cur = Command::CharGiven(Usv::new(c).or_confusion("char_num")?);
                     continue;
                 }
-                Command::MathCharNum(code) => scan_math_char_num(st, code)?,
+                Command::MathCharNum(code) => scan_math_char_num(st, env, code)?,
                 Command::MathGiven(code) => math_code_from_tex(code),
                 Command::XetexMathGiven(code) => code,
-                Command::DelimNum(code) => scan_delim_num(st, code)?,
+                Command::DelimNum(code) => scan_delim_num(st, env, code)?,
                 _ => {
                     back_input(st)?;
-                    scan_left_brace(st)?;
+                    scan_left_brace(st, env)?;
                     st.save_stack.push_saved(Saved::MathGroup(p));
                     push_math(st, GroupCode::Math)?;
                     return Ok(());
@@ -235,11 +252,16 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
 
 /// Appends math character `c`, or expands active character `active` (TeX's `cur_chr`
 /// there) when `c` is `"8000`.
-pub(crate) fn set_math_char(st: &mut EngineState, active: i32, c: i32) -> Result<(), Abort> {
+pub(crate) fn set_math_char(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    active: i32,
+    c: i32,
+) -> Result<(), Abort> {
     if math_char(c) == ACTIVE_MATH_CHAR {
         let cs = CsId::of_active(active).or_confusion("active math char")?;
         fetch_cs_meaning(st, cs);
-        x_token(st)?;
+        x_token(st, env)?;
         back_input(st)?;
     } else {
         let nd = st.mem.new_noad()?;
@@ -292,29 +314,38 @@ pub(crate) fn fetch_box(st: &EngineState, n: Register) -> Option<NodePtr<BoxNode
 
 pub(crate) fn scan_math_char_num(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     code: MathCharNumCode,
 ) -> Result<i32, Abort> {
     Ok(match code {
-        MathCharNumCode::UmathChar => scan_umath_code(st)?,
-        MathCharNumCode::UmathCharNum => scan_xetex_math_char_int(st)?,
-        MathCharNumCode::MathChar => math_code_from_tex(scan_fifteen_bit_int(st)?),
+        MathCharNumCode::UmathChar => scan_umath_code(st, env)?,
+        MathCharNumCode::UmathCharNum => scan_xetex_math_char_int(st, env)?,
+        MathCharNumCode::MathChar => math_code_from_tex(scan_fifteen_bit_int(st, env)?),
     })
 }
 
-pub(crate) fn scan_delim_num(st: &mut EngineState, code: DelimNumCode) -> Result<i32, Abort> {
+pub(crate) fn scan_delim_num(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: DelimNumCode,
+) -> Result<i32, Abort> {
     Ok(match code {
-        DelimNumCode::Udelimiter => scan_umath_code(st)?,
-        DelimNumCode::Delimiter => math_code_from_tex(scan_delimiter_int(st)? / 4096),
+        DelimNumCode::Udelimiter => scan_umath_code(st, env)?,
+        DelimNumCode::Delimiter => math_code_from_tex(scan_delimiter_int(st, env)? / 4096),
     })
 }
 
-pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, Abort> {
+pub(crate) fn scan_keyword(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    keyword: &str,
+) -> Result<bool, Abort> {
     let keyword = keyword.as_bytes();
     let save_cur_cs = st.scanner.cur_cs;
     let backup = st.mem.tokens.begin()?;
     let mut i = 0;
     while i < keyword.len() {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
         let ch = i32::from(keyword[i]);
         if matches!(st.scanner.cur_tok.char(), Some((_, c)) if c == ch || c == ch - 32) {
             st.mem.tokens.push(&backup, st.scanner.cur_tok)?;
@@ -323,7 +354,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
             back_input(st)?;
             if i > 0 {
                 let matched = st.mem.tokens.finish(backup)?;
-                begin_token_list(st, matched, TokenType::BackedUp)?;
+                begin_token_list(st, env, matched, TokenType::BackedUp)?;
             } else {
                 st.mem.tokens.abandon(backup);
             }
@@ -337,11 +368,12 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     Ok(true)
 }
 
-pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
-    get_x_non_blank_non_relax(st)?;
+pub(crate) fn scan_left_brace(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_x_non_blank_non_relax(st, env)?;
     if st.scanner.cur.cmd() != Cmd::LeftBrace {
         back_error(
             st,
+            env,
             "Missing { inserted",
             &[
                 "A left brace was mandatory here, so I've put one in.",
