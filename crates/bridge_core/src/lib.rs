@@ -36,7 +36,6 @@ use flate2::{Compression, GzBuilder, read::GzDecoder};
 use md5::{Digest, Md5};
 use std::num::NonZeroUsize;
 use std::{
-    convert::TryInto,
     ffi::{CStr, CString},
     fmt::{Display, Error as FmtError, Formatter},
     io::{self, Read, SeekFrom, Write},
@@ -1067,59 +1066,6 @@ pub unsafe extern "C" fn ttbc_issue_warning(es: &mut CoreBridgeState, text: *con
     es.issue_warning(&text.to_string_lossy());
 }
 
-/// Issue an error.
-///
-/// # Safety
-///
-/// This function is unsafe because it accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_issue_error(es: &mut CoreBridgeState, text: *const libc::c_char) {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let text = unsafe { CStr::from_ptr(text) };
-    es.issue_error(&text.to_string_lossy());
-}
-
-/// Calculate the MD5 digest of a Tectonic file.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_file_md5(
-    es: &mut CoreBridgeState,
-    path: *const libc::c_char,
-    digest: *mut u8,
-) -> libc::c_int {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let rpath = unsafe { CStr::from_ptr(path) }.to_string_lossy();
-    // SAFETY: the caller passes a writable 16-byte digest buffer.
-    let rdest = unsafe { &mut *digest.cast::<[u8; 16]>() };
-
-    libc::c_int::from(es.get_file_md5(rpath.as_ref(), rdest))
-}
-
-/// Calculate the MD5 digest of a block of binary data.
-///
-/// This actually doesn't rely on the state and isn't really I/O, but we also
-/// have a get-file-MD5 routine so it's convenient to have this here.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_data_md5(
-    data: *const u8,
-    len: libc::size_t,
-    digest: *mut u8,
-) -> libc::c_int {
-    // SAFETY: the caller passes `len` readable bytes at `data`.
-    let rdata = unsafe { slice::from_raw_parts(data, len) };
-    // SAFETY: the caller passes a writable 16-byte digest buffer.
-    unsafe { *digest.cast::<[u8; 16]>() = data_md5(rdata) };
-
-    0
-}
-
 /// Open a Tectonic file for output.
 ///
 /// # Safety
@@ -1184,15 +1130,6 @@ pub unsafe extern "C" fn ttbc_output_write(
     }
 }
 
-/// Flush pending writes to a Tectonic output file.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_output_flush(
-    es: &mut CoreBridgeState,
-    handle: Option<OutputId>,
-) -> libc::c_int {
-    libc::c_int::from(es.output_flush(handle.expect("valid handle")))
-}
-
 /// Close a Tectonic output file.
 #[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_close(
@@ -1221,65 +1158,6 @@ pub unsafe extern "C" fn ttbc_input_open(
     let rname = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     let ris_gz = is_gz != 0;
     es.input_open(&rname, format, ris_gz)
-}
-
-/// Open the "primary input" file.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_input_open_primary(es: &mut CoreBridgeState) -> Option<InputId> {
-    es.input_open_primary()
-}
-
-/// Get the filesystem path of the most-recently-opened input file.
-///
-/// This function is needed by SyncTeX, because its output file should contain
-/// absolute filesystem paths to the input source files. In principle this
-/// functionality could be implemented in a few different ways, but the approach
-/// used here is the most backward-compatible. This function will fill in the
-/// caller's buffer with the filesystem path associated with the most
-/// recently-opened input file, including a terminating NUL, if possible.
-///
-/// It returns 0 if no such path is known, -1 if the path cannot be expressed
-/// UTF-8, -2 if the destination buffer is not big enough, or the number of
-/// bytes written into the buffer (including a terminating NUL) otherwise.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw C pointers.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_get_last_input_abspath(
-    es: &mut CoreBridgeState,
-    buffer: *mut u8,
-    len: libc::size_t,
-) -> libc::ssize_t {
-    if !es.fs_emulation_settings.expose_absolute_paths {
-        return 0;
-    }
-    match es.latest_input_path {
-        None => 0,
-
-        Some(ref p) => {
-            // In principle we could try to handle the full fun of
-            // cross-platform PathBuf/Unicode conversions, but synctex and
-            // friends will be treating our data as a traditional C string in
-            // the end. So play it safe and stick to UTF-8.
-            let p = match p.to_str() {
-                Some(s) => s.as_bytes(),
-                None => return -1,
-            };
-
-            let n = p.len();
-            if n + 1 > len {
-                return -2;
-            }
-
-            // SAFETY: the caller passes `len` writable bytes and `n + 1 <= len`.
-            unsafe {
-                std::ptr::copy(p.as_ptr(), buffer, n);
-                *buffer.add(n) = b'\0';
-            }
-            (n + 1).try_into().unwrap()
-        }
-    }
 }
 
 /// Get the size of a Tectonic input file.
@@ -1445,66 +1323,6 @@ impl Diagnostic {
     pub fn append(&mut self, text: &str) {
         self.message.push_str(text);
     }
-}
-
-/// Create a new diagnostic that will be reported as a warning.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_diag_begin_warning() -> *mut Diagnostic {
-    Box::into_raw(Box::new(Diagnostic::warning()))
-}
-
-/// Create a new diagnostic that will be reported as an error.
-#[unsafe(no_mangle)]
-pub extern "C" fn ttbc_diag_begin_error() -> *mut Diagnostic {
-    Box::into_raw(Box::new(Diagnostic::error()))
-}
-
-/// Append text to a diagnostic.
-///
-/// # Safety
-///
-/// This function is unsafe because it accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_diag_append(diag: &mut Diagnostic, text: *const libc::c_char) {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    let text = unsafe { CStr::from_ptr(text) };
-    diag.append(&text.to_string_lossy());
-}
-
-/// "Finish" a diagnostic: report it to the driver and free the diagnostic object.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences a raw Diagnostic pointer
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_diag_finish(es: &mut CoreBridgeState, diag: *mut Diagnostic) {
-    // SAFETY: `diag` came from `ttbc_diag_begin_*` and is not used again.
-    let diag = unsafe { Box::from_raw(diag) };
-    es.finish_diagnostic(*diag);
-}
-
-/// Run a shell command
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences raw pointers from C and accepts a raw C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ttbc_shell_escape(
-    es: &mut CoreBridgeState,
-    cmd: *const u16,
-    len: libc::size_t,
-) -> libc::c_int {
-    // SAFETY: the caller passes `len` UTF-16 units at `cmd`.
-    let rcmd = unsafe { slice::from_raw_parts(cmd, len) };
-    let rcmd = match String::from_utf16(rcmd) {
-        Ok(cmd) => cmd,
-        Err(err) => {
-            tt_error!(es.status, "command was not valid UTF-16"; err.into());
-            return -1;
-        }
-    };
-
-    libc::c_int::from(es.shell_escape(&rcmd))
 }
 
 /// Different types of files that can be opened by TeX engines

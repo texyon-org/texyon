@@ -190,8 +190,6 @@ static inline const char *strstartswith(const char *s, const char *prefix) {
 
 /* Bridge API helpers using C library functions */
 
-PRINTF_FUNC(2,3) void ttstub_diag_printf(ttbc_diagnostic_t *diag, const char *format, ...);
-PRINTF_FUNC(2,0) void ttstub_diag_vprintf(ttbc_diagnostic_t *diag, const char *format, va_list ap);
 
 /* Wrappers that use our global state variables: a global handle to the bridge
  * state, and a global jmp_buf longjmp() buffer for error handling.
@@ -225,21 +223,15 @@ void ttbc_global_engine_exit(void);
 NORETURN PRINTF_FUNC(1,2) int _tt_abort(const char *format, ...);
 
 PRINTF_FUNC(1,2) void ttstub_issue_warning(const char *format, ...);
-PRINTF_FUNC(1,2) void ttstub_issue_error(const char *format, ...);
 
-void ttstub_diag_finish(ttbc_diagnostic_t *diag);
 
 rust_output_handle_t ttstub_output_open(char const *path, int is_gz);
 rust_output_handle_t ttstub_output_open_stdout(void);
 int ttstub_output_putc(rust_output_handle_t handle, int c);
 size_t ttstub_output_write(rust_output_handle_t handle, const char *data, size_t len);
-PRINTF_FUNC(2,3) int ttstub_fprintf(rust_output_handle_t handle, const char *format, ...);
-int ttstub_output_flush(rust_output_handle_t handle);
 int ttstub_output_close(rust_output_handle_t handle);
 
 rust_input_handle_t ttstub_input_open(char const *path, ttbc_file_format format, int is_gz);
-rust_input_handle_t ttstub_input_open_primary(void);
-ssize_t ttstub_get_last_input_abspath(char *buffer, size_t len);
 size_t ttstub_input_get_size(rust_input_handle_t handle);
 time_t ttstub_input_get_mtime(rust_input_handle_t handle);
 size_t ttstub_input_seek(rust_input_handle_t handle, ssize_t offset, int whence);
@@ -249,9 +241,7 @@ int ttstub_input_getc(rust_input_handle_t handle);
 int ttstub_input_ungetc(rust_input_handle_t handle, int ch);
 int ttstub_input_close(rust_input_handle_t handle);
 
-int ttstub_get_file_md5(char const *path, char *digest);
 
-int ttstub_shell_escape(const unsigned short *cmd, size_t len);
 
 END_EXTERN_C
 
