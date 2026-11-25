@@ -83,7 +83,7 @@ use crate::memory::glue_store::GlueSpecId;
 use crate::print::errors::error;
 
 /// A character in a lig/kern program, or `NONE` (WEB's `non_char`) for a boundary.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub(crate) struct LigChar(i32);
 
 impl LigChar {
@@ -436,35 +436,27 @@ pub(crate) fn read_font_info(
         end_diagnostic(st, false);
     }
 
-    let mut bad_tfm = false;
-    'read: {
-        macro_rules! bad {
-            () => {{
-                bad_tfm = true;
-                break 'read;
-            }};
-        }
-
+    let bad_tfm = 'read: {
         if name.quoted {
             g = load_native_font(st, font, &path)?;
             if g != NULL_FONT {
-                break 'read;
+                break 'read false;
             }
         }
 
         name_too_long = st.strings.length(nom) > 255 || st.strings.length(aire) > 255;
         if name_too_long {
-            bad!();
+            break 'read true;
         }
 
         let Some((file, found)) = open_input_file(st, tfm_name, FileFormat::Tfm) else {
             if !name.quoted {
                 g = load_native_font(st, font, &path)?;
                 if g != NULL_FONT {
-                    break 'read;
+                    break 'read false;
                 }
             }
-            bad!();
+            break 'read true;
         };
         tfm_file = file;
         file_opened = true;
@@ -487,7 +479,7 @@ pub(crate) fn read_font_info(
             Err(TfmError::OutOfMemory) => {
                 return Err(Abort::Internal("not enough memory to load another font"));
             }
-            Err(TfmError::Bad) => bad!(),
+            Err(TfmError::Bad) => true,
             Ok(tfm) => {
                 let f = st.fonts.install_tfm(&st.eqtb, tfm, nom, aire);
                 g = f;
@@ -495,9 +487,10 @@ pub(crate) fn read_font_info(
                     Some(mapping) => load_mapping_file(st, mapping, true, tfm_name)?,
                     None => None,
                 };
+                false
             }
         }
-    }
+    };
 
     if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
         let reason = if file_opened {

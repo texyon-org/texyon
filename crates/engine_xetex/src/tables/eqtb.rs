@@ -42,25 +42,6 @@ impl EqValue for Command {
     }
 }
 
-impl EqLoc for CsId {
-    type Value = Command;
-    #[inline(always)]
-    fn index(self) -> usize {
-        CsId::index(self)
-    }
-    type Store = Table<Self, Command>;
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Self::Store {
-        &eqtb.meanings
-    }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-        &mut eqtb.meanings
-    }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::Cs(old)
-    }
-}
 impl EqValue for Scaled {}
 
 pub(crate) trait EqLoc: Copy {
@@ -71,6 +52,34 @@ pub(crate) trait EqLoc: Copy {
     fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store;
     fn restore(old: Old<Self>) -> Restore;
 }
+
+/// Implements [`EqLoc`] for `$loc`, kept in `eqtb.$table` and saved as `Restore::$restore`.
+macro_rules! impl_eq_loc {
+    ($loc:ty, $store:ident, $value:ty, $table:ident, $restore:ident, |$l:ident| $index:expr) => {
+        impl EqLoc for $loc {
+            type Value = $value;
+            type Store = $store<Self, $value>;
+            #[inline(always)]
+            fn index(self) -> usize {
+                let $l = self;
+                $index
+            }
+            #[inline(always)]
+            fn table(eqtb: &EqtbState) -> &Self::Store {
+                &eqtb.$table
+            }
+            #[inline(always)]
+            fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
+                &mut eqtb.$table
+            }
+            fn restore(old: Old<Self>) -> Restore {
+                Restore::$restore(old)
+            }
+        }
+    };
+}
+
+impl_eq_loc!(CsId, Table, Command, meanings, Cs, |cs| CsId::index(cs));
 
 pub(crate) trait EqStore<L, T> {
     fn get(&self, loc: L) -> T;
@@ -424,24 +433,14 @@ impl InterCharPair {
     }
 }
 
-impl EqLoc for InterCharPair {
-    type Value = TokenList;
-    type Store = SparseTable<Self, TokenList>;
-    fn index(self) -> usize {
-        usize::from(self.first) * 4096 + usize::from(self.second)
-    }
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Self::Store {
-        &eqtb.inter_char
-    }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-        &mut eqtb.inter_char
-    }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::InterChar(old)
-    }
-}
+impl_eq_loc!(
+    InterCharPair,
+    SparseTable,
+    TokenList,
+    inter_char,
+    InterChar,
+    |p| usize::from(p.first) * 4096 + usize::from(p.second)
+);
 
 /// A register number: `\count`, `\dimen`, `\skip`, `\muskip`, `\toks` or `\box` 0 to 32767.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
@@ -499,25 +498,9 @@ macro_rules! eq_loc {
             }
         }
 
-        impl EqLoc for $loc {
-            type Value = $value;
-            #[inline(always)]
-            fn index(self) -> usize {
-                usize::try_from(self.0).unwrap_or(usize::MAX)
-            }
-            type Store = Table<Self, $value>;
-            #[inline(always)]
-            fn table(eqtb: &EqtbState) -> &Self::Store {
-                &eqtb.$table
-            }
-            #[inline(always)]
-            fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-                &mut eqtb.$table
-            }
-            fn restore(old: Old<Self>) -> Restore {
-                Restore::$restore(old)
-            }
-        }
+        impl_eq_loc!($loc, Table, $value, $table, $restore, |l| {
+            usize::try_from(l.0).unwrap_or(usize::MAX)
+        });
     };
 }
 
@@ -685,25 +668,7 @@ impl ShapeLoc {
     pub(crate) const LEN: usize = ShapeLoc::DisplayWidowPenalties as usize + 1;
 }
 
-impl EqLoc for ShapeLoc {
-    type Value = ShapeRef;
-    #[inline(always)]
-    fn index(self) -> usize {
-        self as usize
-    }
-    type Store = Table<Self, ShapeRef>;
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Self::Store {
-        &eqtb.shapes
-    }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-        &mut eqtb.shapes
-    }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::Shape(old)
-    }
-}
+impl_eq_loc!(ShapeLoc, Table, ShapeRef, shapes, Shape, |l| l as usize);
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Hash, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
@@ -759,25 +724,9 @@ impl BoxLoc {
     }
 }
 
-impl EqLoc for BoxLoc {
-    type Value = Option<NodePtr<BoxNode>>;
-    #[inline(always)]
-    fn index(self) -> usize {
-        usize::from(self.0.0)
-    }
-    type Store = Table<Self, Self::Value>;
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Self::Store {
-        &eqtb.boxes
-    }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-        &mut eqtb.boxes
-    }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::Box(old)
-    }
-}
+impl_eq_loc!(BoxLoc, Table, Option<NodePtr<BoxNode>>, boxes, Box, |l| {
+    usize::from(l.0.0)
+});
 
 eq_loc!(FontLoc, 1 + 3 * 256, FontId, fonts, Font);
 
@@ -821,25 +770,9 @@ macro_rules! code_loc {
             }
         }
 
-        impl EqLoc for $loc {
-            type Value = $value;
-            #[inline(always)]
-            fn index(self) -> usize {
-                usize::try_from(self.0).unwrap_or(usize::MAX)
-            }
-            type Store = Table<Self, $value>;
-            #[inline(always)]
-            fn table(eqtb: &EqtbState) -> &Self::Store {
-                &eqtb.$table
-            }
-            #[inline(always)]
-            fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
-                &mut eqtb.$table
-            }
-            fn restore(old: Old<Self>) -> Restore {
-                Restore::$restore(old)
-            }
-        }
+        impl_eq_loc!($loc, Table, $value, $table, $restore, |l| {
+            usize::try_from(l.0).unwrap_or(usize::MAX)
+        });
     };
 }
 

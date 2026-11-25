@@ -4,10 +4,8 @@ use std::hash::{Hash, Hasher};
 use std::iter;
 
 use crate::base::codes::MarkCode;
-use crate::base::consts::TEX_NULL;
 use crate::base::mode::Mode;
 use crate::base::units::RawPtr;
-use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::{NodePtr, link_of};
 use crate::scanning::input::{InputName, InputState};
@@ -16,43 +14,12 @@ use crate::tables::cs::CsId;
 use crate::tables::eqtb::Register;
 use crate::tables::save::{Restore, SaveEntry};
 
+use super::bundle::{FontArrays, HyphTables};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {
     pub(crate) name: &'static str,
     pub(crate) value: u64,
-}
-
-/// A table value widened to a hash word. Signed values sign-extend.
-trait HashWord {
-    fn hash_word(self) -> u64;
-}
-
-macro_rules! unsigned_hash_word {
-    ($($t:ty),*) => {$(
-        impl HashWord for $t {
-            fn hash_word(self) -> u64 {
-                u64::from(self)
-            }
-        }
-    )*};
-}
-unsigned_hash_word!(bool, u8, u16, u32);
-
-macro_rules! signed_hash_word {
-    ($($t:ty),*) => {$(
-        impl HashWord for $t {
-            fn hash_word(self) -> u64 {
-                i64::from(self) as u64
-            }
-        }
-    )*};
-}
-signed_hash_word!(i8, i16, i32);
-
-impl HashWord for usize {
-    fn hash_word(self) -> u64 {
-        u64::try_from(self).unwrap_or(u64::MAX)
-    }
 }
 
 pub(crate) fn digest_state(st: &EngineState) -> Vec<ComponentDigest> {
@@ -324,40 +291,13 @@ fn digest_fonts(st: &EngineState) -> u64 {
     ]);
     h.word(u64::from(fonts.xtx_ligature_present));
     h.word(u64::from(fonts.gave_char_warning_help));
-    let font_count = (fonts.font_ptr.raw() + 1).max(0) as usize;
-    macro_rules! hash_values {
-        ($field:ident $(.$raw:ident())?) => {
-            for &value in fonts.$field.as_slice().iter().take(font_count) {
-                h.word(HashWord::hash_word(value$(.$raw())?));
-            }
-        };
-    }
-    hash_values!(font_flags);
-    hash_values!(font_letter_space.raw());
-    hash_values!(font_size.raw());
-    hash_values!(font_dsize.raw());
-    hash_values!(font_name.raw());
-    hash_values!(font_area.raw());
-    hash_values!(font_bc);
-    hash_values!(font_ec);
-    hash_values!(font_bchar.raw());
-    hash_values!(font_false_bchar.raw());
-    for &glue in fonts.font_glue.as_slice().iter().take(font_count) {
-        h.i32(glue.map_or(TEX_NULL, GlueSpecId::raw));
-    }
-    hash_values!(font_used);
+    let font_count = usize::try_from(fonts.font_ptr.raw() + 1).unwrap_or(0);
+    FontArrays::hash_live(fonts, font_count, &mut h);
     for metrics in fonts.metrics.as_slice().iter().take(font_count) {
         Hash::hash(metrics, &mut h);
     }
     for params in fonts.params.as_slice().iter().take(font_count) {
         Hash::hash(params, &mut h);
-    }
-    hash_values!(hyphen_char);
-    hash_values!(skew_char);
-    for value in fonts.font_check.as_slice().iter().take(font_count) {
-        for &b in value {
-            h.word(u64::from(b));
-        }
     }
     for engine in fonts.font_layout_engine.as_slice().iter().take(font_count) {
         h.word(u64::from(engine.is_some()));
@@ -560,36 +500,9 @@ fn digest_hyph(st: &EngineState) -> u64 {
         hyph.hyph_start.raw(),
         hyph.hyph_index.map_or(0, |p| p.raw()),
     ]);
-    macro_rules! hash_values {
-        ($field:ident $(.$raw:ident())?) => {
-            for &value in &hyph.$field {
-                h.word(HashWord::hash_word(value$(.$raw())?));
-            }
-        };
-    }
-    hash_values!(hc);
-    hash_values!(hu.raw());
-    hash_values!(hyf);
-    hash_values!(trie_min);
-    hash_values!(hyf_distance);
-    hash_values!(hyf_num);
-    hash_values!(hyf_next);
-    hash_values!(op_start);
-    hash_values!(trie_used);
-    hash_values!(trie_op_lang);
-    hash_values!(trie_op_val);
-    hash_values!(trie_trl);
-    hash_values!(trie_tro);
-    hash_values!(trie_trc);
-    hash_values!(trie_c);
-    hash_values!(trie_o);
-    hash_values!(trie_l);
-    hash_values!(trie_r);
-    hash_values!(trie_hash);
-    hash_values!(trie_taken);
-    hash_values!(hyph_word.raw());
-    hash_values!(hyph_list.raw());
-    hash_values!(hyph_link);
-    hash_values!(trie_op_hash_array);
+    hyph.hc.hash(&mut h);
+    hyph.hu.hash(&mut h);
+    hyph.hyf.hash(&mut h);
+    HyphTables::hash_live(hyph, &mut h);
     h.finish()
 }

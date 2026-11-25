@@ -1,5 +1,6 @@
 //! Non-journaled state carried by a checkpoint rung.
 
+use std::hash::{Hash, Hasher};
 use std::mem::{size_of, take};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -530,7 +531,7 @@ impl InputBundle {
 
 macro_rules! font_arrays {
     ($($field:ident: $ty:ty,)*) => {
-        struct FontArrays {
+        pub(super) struct FontArrays {
             $($field: Vec<$ty>,)*
         }
 
@@ -547,6 +548,11 @@ macro_rules! font_arrays {
 
             fn allocated_bytes(&self) -> usize {
                 0 $(+ vec_bytes(&self.$field))*
+            }
+
+            /// Hashes the arrays of the first `count` fonts, for checkpoint digests.
+            pub(super) fn hash_live(src: &FontState, count: usize, h: &mut impl Hasher) {
+                $(src.$field.as_slice().iter().take(count).for_each(|v| v.hash(h));)*
             }
         }
     };
@@ -720,6 +726,11 @@ macro_rules! hyph_tables {
 
             fn allocated_bytes(&self) -> usize {
                 0 $(+ vec_bytes(&self.$field))*
+            }
+
+            /// Hashes every table, for checkpoint digests.
+            pub(super) fn hash_live(src: &HyphState, h: &mut impl Hasher) {
+                $(src.$field.hash(h);)*
             }
         }
     };
