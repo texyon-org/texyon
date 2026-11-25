@@ -15,7 +15,6 @@ use crate::base::codes::{ConvertCode, LastItemCode};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{FileFormat, input_open, with_bridge_state};
 use crate::ffi::teckit_icu::{FontMappingHandle, hb_tag};
 use crate::files::io::{AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE, icu_converter_exists};
 use crate::print::errors::Abort;
@@ -24,6 +23,7 @@ use crate::print::{
     print_raw_bytes,
 };
 use crate::state::EngineState;
+use texyon_bridge_core::FileFormat;
 
 mod native;
 
@@ -250,7 +250,7 @@ pub(crate) fn load_mapping_file(
         .unwrap_or(file_name.len());
     let name = &file_name[..name_len];
 
-    let Some(opened) = input_open(env, name, FileFormat::MiscFonts, false) else {
+    let Some(opened) = env.open_input(name, FileFormat::MiscFonts, false) else {
         font_mapping_warning(st, env, name, font_name, 1);
         return Ok(None);
     };
@@ -543,9 +543,7 @@ fn font_from_file(
     point_size: Scaled,
 ) -> Option<Font> {
     let path = c_path(path);
-    with_bridge_state(env, |io| {
-        Font::from_file(path, index as usize, point_size.raw(), io)
-    })
+    env.bridge_state(|io| Font::from_file(path, index as usize, point_size.raw(), io))
 }
 
 fn font_from_platform(
@@ -553,9 +551,7 @@ fn font_from_platform(
     font_ref: &PlatformFontRef,
     point_size: Scaled,
 ) -> Option<Font> {
-    with_bridge_state(env, |io| {
-        Font::from_platform(font_ref.clone(), point_size.raw(), io)
-    })
+    env.bridge_state(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
 }
 
 /// The point size to load at, `size` resolved against `font`'s design size.
@@ -626,7 +622,7 @@ pub(crate) fn find_native_font(
             }
         }
     } else {
-        let found = with_bridge_state(env, |io| {
+        let found = env.bridge_state(|io| {
             FontManager::with_font_manager(|mgr| {
                 mgr.find_font(name_string, var_string.as_mut(), fix2d(size.raw()), io)
             })

@@ -5,9 +5,8 @@ use std::mem;
 
 use crate::base::units::StrNumber;
 use crate::env::EngineEnv;
-use crate::ffi::bridge;
-use crate::ffi::bridge::{diag_append, diag_finish};
 use crate::state::{EngineExecutionMode, EngineState};
+use texyon_bridge_core::Diagnostic as HostDiagnostic;
 
 /// What a diagnostic reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,13 +169,13 @@ fn emit_with_cli_text(
     cli: String,
 ) {
     let bridged = match diagnostic.kind {
-        DiagnosticKind::Fatal | DiagnosticKind::Error => Some(bridge::Diagnostic::error()),
-        DiagnosticKind::Warning => Some(bridge::Diagnostic::warning()),
+        DiagnosticKind::Fatal | DiagnosticKind::Error => Some(HostDiagnostic::error()),
+        DiagnosticKind::Warning => Some(HostDiagnostic::warning()),
         DiagnosticKind::Written => None,
     };
     if let Some(mut bridged) = bridged {
         diag_append(&mut bridged, &cli);
-        diag_finish(env, bridged);
+        env.report(bridged);
     }
     st.shipout.diagnostics_issued += 1;
     if st.config.execution_mode == EngineExecutionMode::Resident {
@@ -198,4 +197,11 @@ fn cli_text(diagnostic: &Diagnostic, with_help: bool) -> String {
         }
     }
     text
+}
+
+/// Appends `text` to `diag`. A text with a NUL appends nothing.
+fn diag_append(diag: &mut HostDiagnostic, text: &str) {
+    if !text.contains('\0') {
+        diag.append(text);
+    }
 }

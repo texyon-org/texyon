@@ -24,7 +24,6 @@ use crate::build::main_control::{main_control, main_control_resume};
 use crate::build::packaging::{CurMarks, MarksAction};
 use crate::build::pagebuilder::{PageContents, initialize_pagebuilder_variables};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::set_error_message;
 use crate::ffi::clock::{get_date_and_time, get_seconds_and_micros, init_start_time};
 use crate::files::format_io::{load_fmt_file, store_fmt_file};
 use crate::files::io::{
@@ -40,6 +39,7 @@ use crate::memory::mem::{
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, PageInsNode};
 use crate::preview::journal::{Journaled, JournaledVec};
+use crate::print::errors::set_error_message;
 use crate::print::errors::{Abort, InteractionMode, OrConfusion};
 use crate::print::{
     Selector, print, print_char, print_command, print_esc, print_int, print_nl, show_save_groups,

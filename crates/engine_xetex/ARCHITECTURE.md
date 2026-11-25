@@ -23,7 +23,8 @@ they share, and they reach it and each other through `super::`.
 - `shipout.rs` with `shipout/`: DVI/XDV output, SyncTeX, pictures.
 - `print.rs` with `print/`: printing, errors, diagnostics, `\show...`.
 - `files/`: file I/O and names, the file-info primitives, formats.
-- `ffi/`: the bridge to the host and the C libraries (TECkit, ICU, the C clock).
+- `env.rs`: `EngineEnv`, the engine's outside world (see below).
+- `ffi/`: the C libraries (TECkit, ICU, the C clock).
 - `preview/`: the resident session, checkpoints, replay sources, the sync index.
 - `engine.rs` (init, run, teardown) and `state.rs` (`EngineState`, `ConfigState`).
 
@@ -184,7 +185,7 @@ see each other through `pub(super)`.
   `show_context`, `show_token_list`, `issue_message`) and
   `print/warnings.rs` (e-TeX nesting warnings, font and `char_warning`s).
 - `shipout/dvi.rs`: `DviWriter` (`st.shipout.dvi`), the XDV byte stream. It owns
-  TeX's half-swapped `dvi_buf`, the file handle, `last_bop`, the push depth
+  TeX's half-swapped `dvi_buf`, `last_bop`, the push depth
   (`cur_s`, -2 after an overflow) and the page manifest that records byte
   spans for live preview. Shipout calls commands (`bop`, `eop`, `set_char`,
   `set_rule`, `fnt`, `fnt_def`, `set_glyphs`, `special`, `movement`, ...),
@@ -229,29 +230,37 @@ see each other through `pub(super)`.
 
 Crate and C boundaries:
 
-- `ffi/bridge.rs` is the engine's I/O over the run's `CoreBridgeState` (files,
-  diagnostics, shell escape, MD5, abort message), calling bridge-core's Rust
-  methods with byte-slice names. Replay sources answer first. A run installs
-  its state with `bridge::enter(api)`, a scope that holds the exclusive borrow
-  and backs the one static pointer `with_bridge` reads. bridge-core's C global
-  state (`ttbc_global_engine_enter`) is set only around calls into C that do
-  their own I/O, which are the pdf_io picture probes (`bridge::with_c_io`).
+- `EngineEnv` (`env.rs`) is everything outside the typesetting state, so
+  checkpoints and rewinds never touch it. Its owner lends it to each operation
+  as the second parameter of the procedures that reach it (`fn f(st, env)`): the
+  preview session for its whole life, `XetexEngine::process` for one run over
+  the launcher's hooks. It holds the bridge-core `BridgeHost` (I/O providers,
+  status, settings), the open outputs (terminal, log and `\openout` streams
+  buffered and flushed before host diagnostics and at operation end, xdv,
+  synctex), and, in the preview, the running `PreviewOperation`: the replay
+  sources (`preview/replay/adapter.rs`, `SnapshotSources`) and the fence
+  controller with the checkpoint ladder. Opens ask the sources first, then the
+  host (`env.open_input`), and inputs own their handle (`files/input_file.rs`,
+  read ahead in chunks, snapshot files as one shared `Arc`, watermarks synced
+  per line).
+- Code that names files by id, the pdf_io picture probes and font loading,
+  gets a `CoreBridgeState` over the env's host for that call
+  (`env.bridge_state`). bridge-core's C global state (`ttbc_global_engine_enter`)
+  is set only around the C calls that do their own I/O.
 - Fonts and shaping go straight to `texyon_xetex_layout`'s Rust API:
   `Font`, `LayoutEngine` (`state::FontEngineHandle`), `FontManager`, the
-  glyph-box and protrusion caches. Loading a font file takes the run's
-  `CoreBridgeState` (`with_bridge`). That crate has no C API. `fonts/ot_math.rs`
+  glyph-box and protrusion caches. That crate has no C API. `fonts/ot_math.rs`
   reads the MATH table through `LayoutEngine::ot_math()`, bridge-harfbuzz's
   safe `ot::Math`.
 - `extern "C"` remains only for real C: `ffi/teckit_icu.rs` (TECkit converters, ICU
   line breaking and bidi, with their disposal, plus the HarfBuzz tag and
-  `with_c_str` helpers), `files/io.rs` (ICU input converters), `shipout/pic.rs` and
+  `with_c_str` helpers), `files/input_file.rs` (ICU input converters), `shipout/pic.rs` and
   `engine.rs` (pdf_io), `ffi/clock.rs` (Windows time calls). File names are
   Rust bytes (font and input paths, the synctex and
   source-special names) and become C strings only at those calls.
 - Raw pointers stay in those modules. Elsewhere `unsafe` is limited to
   plain-data byte views (`memory/mem_types.rs`, `state.rs`, `files/format_io.rs`),
-  the bridge pointer and `strerror` (`ffi/bridge.rs`), the C time calls (`ffi/clock.rs`) and the preview
-  controller's pointers (`preview/session.rs`). Every block has a `// SAFETY:` comment
+  `strerror` (`shipout.rs`) and the C time calls (`ffi/clock.rs`). Every block has a `// SAFETY:` comment
   (`clippy::undocumented_unsafe_blocks` is clean). The
   engine proper prints and reports with Rust strings: `print(st, "...")`,
   `print_nl`, `print_esc` take a `&str`, bytes, a byte character or a

@@ -4,7 +4,7 @@ use std::io::SeekFrom;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use texyon_bridge_core::EOF;
+use texyon_bridge_core::{EOF, FileFormat, FoundAs, OpenedInput};
 use texyon_io_base::InputHandle;
 
 use crate::env::EngineEnv;
@@ -73,6 +73,73 @@ impl InputSource {
         match self {
             InputSource::Disk(handle) => env.host.close_input(handle),
             InputSource::Memory(id) => env.sources().is_none_or(|sources| sources.close(id)),
+        }
+    }
+}
+
+/// An input the engine opened, with how it was found.
+pub(crate) struct OpenedSource {
+    pub source: InputSource,
+    pub found: FoundAs,
+    /// Its absolute path for SyncTeX, empty when not known or not exposed.
+    pub abspath: Vec<u8>,
+}
+
+/// Longest absolute input path kept, including C's terminating NUL.
+const ABSPATH_CAPACITY: usize = 1024;
+
+impl EngineEnv<'_> {
+    /// Opens input file `path`, from the preview's sources if they hold it.
+    pub(crate) fn open_input(
+        &mut self,
+        path: &[u8],
+        format: FileFormat,
+        is_gz: bool,
+    ) -> Option<OpenedSource> {
+        let path = String::from_utf8_lossy(path);
+        if let Some(id) = self
+            .sources()
+            .and_then(|sources| sources.open_named(&path, format))
+        {
+            return Some(self.memory_opened(id));
+        }
+        let opened = self.host.open_input(&path, format, is_gz)?;
+        Some(self.disk_opened(opened))
+    }
+
+    /// Opens the primary input.
+    pub(crate) fn open_primary_input(&mut self) -> Option<OpenedSource> {
+        if let Some(id) = self.sources().map(|sources| sources.open_primary()) {
+            return Some(self.memory_opened(id));
+        }
+        let opened = self.host.open_primary_input()?;
+        Some(self.disk_opened(opened))
+    }
+
+    fn memory_opened(&mut self, id: MemoryInputId) -> OpenedSource {
+        let abspath = self
+            .sources()
+            .and_then(|sources| sources.last_abspath(ABSPATH_CAPACITY - 1))
+            .unwrap_or_default();
+        OpenedSource {
+            source: InputSource::Memory(id),
+            found: FoundAs::Asked,
+            abspath,
+        }
+    }
+
+    fn disk_opened(&mut self, opened: OpenedInput) -> OpenedSource {
+        let abspath = match self.host.exposed_path(opened.path.as_deref()) {
+            Some(path) if path.len() < ABSPATH_CAPACITY => {
+                let end = path.find('\0').unwrap_or(path.len());
+                path.as_bytes()[..end].to_vec()
+            }
+            _ => Vec::new(),
+        };
+        OpenedSource {
+            source: InputSource::Disk(opened.handle),
+            found: opened.found,
+            abspath,
         }
     }
 }

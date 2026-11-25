@@ -14,7 +14,6 @@ use crate::base::command::Command;
 use crate::base::params::IntPar;
 use crate::base::units::FontId;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::issue_warning;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::scanning::input::{InputName, TOKEN_LIST};
 use crate::state::EngineState;
@@ -281,24 +280,15 @@ pub(crate) fn char_warning(
     let s = st.strings.make_string()?;
     let chr = st.strings.texstring_bytes(s);
     st.strings.flush_string();
-    issue_warning(
-        env,
-        &format!(
-            "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
-            String::from_utf8_lossy(&chr),
-            c as u32,
-            String::from_utf8_lossy(&font_name),
-        ),
-    );
+    env.warn(&format!(
+        "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
+        String::from_utf8_lossy(&chr),
+        c as u32,
+        String::from_utf8_lossy(&font_name),
+    ));
     if !st.fonts.gave_char_warning_help {
-        issue_warning(
-            env,
-            "  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to",
-        );
-        issue_warning(
-            env,
-            "  choose a different font that covers the unrepresentable character(s)",
-        );
+        env.warn("  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to");
+        env.warn("  choose a different font that covers the unrepresentable character(s)");
         st.fonts.gave_char_warning_help = true;
     }
     Ok(())

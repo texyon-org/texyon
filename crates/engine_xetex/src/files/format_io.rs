@@ -23,7 +23,6 @@ use crate::base::units::{
 use crate::build::hyphenation::{BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{FileFormat, input_open};
 use crate::files::io::{make_name_string, pack_job_name};
 use crate::fonts::tfm::{
     CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
@@ -44,6 +43,7 @@ use crate::state::EngineState;
 use crate::tables::cs::{CsId, NameSlot};
 use crate::tables::eqtb::{EqStore, EqtbState, InterCharPair, ShapeRef};
 use crate::tables::hash::{HASH_PRIME, HashEntry, PrimEntry};
+use texyon_bridge_core::FileFormat;
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -638,7 +638,7 @@ pub fn load_fmt_file(
 ) -> Result<(), Abort> {
     let loc = st.input.cur_input.loc;
 
-    let Some(opened) = input_open(env, dump_name.as_bytes(), FileFormat::Format, false) else {
+    let Some(opened) = env.open_input(dump_name.as_bytes(), FileFormat::Format, false) else {
         return Err(Abort::Internal("cannot open the format file"));
     };
     let mut file = opened.source;

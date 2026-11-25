@@ -14,7 +14,6 @@ use crate::base::token::TokenList;
 use crate::base::units::{BufPos, FontId, StrNumber};
 use crate::engine::cleanup;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::set_error_message;
 use crate::files::io::{FileName, close_files_and_terminate, open_log_file};
 use crate::memory::node::link_of;
 use crate::scanning::input::{TokenType, back_input};
@@ -719,4 +718,9 @@ impl Default for ErrorState {
             breadth_max: 0,
         }
     }
+}
+
+/// Surfaces `message` as the run's abort message. A message with a NUL is dropped.
+pub(crate) fn set_error_message(message: impl AsRef<[u8]>) {
+    texyon_bridge_core::set_abort_message(message.as_ref());
 }

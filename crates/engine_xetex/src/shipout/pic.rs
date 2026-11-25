@@ -9,7 +9,6 @@ use texyon_bridge_core::InputId;
 use crate::base::codes::code_enum;
 use crate::base::units::Scaled;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{CoreBridgeState, FileFormat, with_bridge_state};
 use crate::ffi::teckit_icu::with_c_str;
 use crate::files::io::scan_file_name;
 use crate::fonts::ext::{d2fix, fix2d};
@@ -17,6 +16,7 @@ use crate::memory::node::{PicNode, WhatsitSubtype};
 use crate::print::errors::{Abort, error};
 use crate::scanning::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
 use crate::state::EngineState;
+use texyon_bridge_core::{CoreBridgeState, FileFormat};
 
 #[repr(C)]
 #[derive(Default)]
@@ -197,7 +197,7 @@ fn find_pic_file(
     pdf_box: Option<PageboxType>,
     page: c_int,
 ) -> Result<(c_int, RealRect, Vec<u8>), Abort> {
-    with_bridge_state(env, |es| {
+    env.bridge_state(|es| {
         let Some(id) = es.input_open(&String::from_utf8_lossy(path), FileFormat::Pict, false)
         else {
             return Ok((1, RealRect::default(), path.to_vec()));
@@ -486,7 +486,7 @@ pub(crate) fn load_picture(
 }
 
 pub(crate) fn count_pdf_file_pages_named(env: &mut EngineEnv, name: &[u8]) -> Result<c_int, Abort> {
-    with_bridge_state(env, |es| {
+    env.bridge_state(|es| {
         let Some(id) = es.input_open(&String::from_utf8_lossy(name), FileFormat::Pict, false)
         else {
             return Ok(0);

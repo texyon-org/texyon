@@ -7,7 +7,6 @@ use crate::base::params::IntPar;
 use crate::base::token::{TokCursor, Token, TokenList};
 use crate::base::units::StrNumber;
 use crate::env::{EngineEnv, WriteStream};
-use crate::ffi::bridge::shell_escape;
 use crate::files::io::{FileName, may_write};
 use crate::memory::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
 use crate::print::diagnostic::{DiagnosticKind, begin_capture, end_capture};
@@ -160,7 +159,7 @@ fn write_out(
             print_nl(st, env, "");
             print_ln(st, env);
         } else {
-            shell_escape(env, st.strings.cur_string());
+            env.shell_escape(st.strings.cur_string());
         }
         st.strings.discard_cur_string();
     }

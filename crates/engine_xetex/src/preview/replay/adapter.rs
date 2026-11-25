@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
-use crate::ffi::bridge::FileFormat;
+use texyon_bridge_core::FileFormat;
 
 /// The snapshot an operation reads its sources from, with the files it opened.
 pub(crate) struct SnapshotSources {
@@ -55,6 +55,10 @@ impl SnapshotSources {
             written,
             observed: 0,
         }
+    }
+
+    pub(crate) fn snapshot(&self) -> &SourceSnapshot {
+        &self.snapshot
     }
 
     /// The files the engine has written, including any from this operation.

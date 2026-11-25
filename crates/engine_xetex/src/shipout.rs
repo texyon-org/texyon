@@ -7,7 +7,6 @@ use crate::build::packaging::LrState;
 use crate::build::pagebuilder::PageContents;
 use crate::engine::output_file_extension;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::strerror;
 use crate::files::io::{make_name_string, open_log_file, pack_job_name};
 use crate::fonts::FontState;
 use crate::fonts::ext::apply_tfm_font_mapping;
@@ -1722,6 +1721,14 @@ pub(crate) struct ShipoutState {
     pub dvi_h: Scaled,
     pub dvi_v: Scaled,
     pub dvi_f: FontId,
+}
+
+/// The C library's message for error number `errnum`.
+fn strerror(errnum: i32) -> Vec<u8> {
+    // SAFETY: strerror returns a NUL-terminated message, copied before any other call.
+    unsafe { std::ffi::CStr::from_ptr(libc::strerror(errnum)) }
+        .to_bytes()
+        .to_vec()
 }
 
 #[cfg(test)]

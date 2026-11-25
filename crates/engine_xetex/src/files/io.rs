@@ -1,7 +1,6 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use std::cell::RefCell;
 use std::{iter, mem, slice};
 
 use texyon_bridge_core::EOF;
@@ -15,7 +14,6 @@ use crate::base::utf8;
 use crate::base::utf8::{BYTES_FROM_UTF8, OFFSETS_FROM_UTF8, next_utf8_char};
 use crate::engine::output_file_extension;
 use crate::env::{EngineEnv, WriteStream};
-use crate::ffi::bridge::{FileFormat, directory_exists, input_open, input_open_primary};
 use crate::ffi::teckit_icu::FontMappingHandle;
 use crate::files::input_file::{Decoder, Encoding, IcuConverter, InputFile};
 use crate::print::diagnostic::warn_host;
@@ -34,6 +32,7 @@ use crate::shipout::synctex::{synctex_start_input, synctex_terminate};
 use crate::shipout::{ensure_write_stream_open, finalize_dvi_file};
 use crate::state::EngineState;
 use crate::tables::string_pool::StringsState;
+use texyon_bridge_core::FileFormat;
 
 pub(crate) const AUTO: i32 = 0;
 pub(crate) const UTF8: i32 = 1;
@@ -141,13 +140,13 @@ pub(crate) fn open_input_file(
     filefmt: FileFormat,
 ) -> Option<(InputFile, FoundInput)> {
     let opened = if filefmt == FileFormat::TexyonPrimary {
-        input_open_primary(env)
+        env.open_primary_input()
     } else if path.first() == Some(&b'|') {
         // TeX Live without shell escape takes the name as a file, which is not found.
         warn_host(st, env, "TeXyoN cannot read from shell commands");
         return None;
     } else {
-        input_open(env, path, filefmt, false)
+        env.open_input(path, filefmt, false)
     }?;
 
     let name = if filefmt == FileFormat::TexyonPrimary {
@@ -242,15 +241,12 @@ fn decoder_for(
     Some(Decoder::Plain(encoding))
 }
 
+/// Buffers a line read reuses from one line to the next.
 #[derive(Default)]
-struct LineScratch {
+pub(crate) struct LineScratch {
     bytes: Vec<u8>,
     utf32: Vec<u32>,
     normalizers: [Option<FontMappingHandle>; 2],
-}
-
-thread_local! {
-    static LINE_SCRATCH: RefCell<LineScratch> = Default::default();
 }
 
 fn is_line_end(c: i32) -> bool {
@@ -306,7 +302,9 @@ pub(crate) fn input_line(
     env: &mut EngineEnv,
     f: &mut InputFile,
 ) -> Result<bool, Abort> {
-    let more = LINE_SCRATCH.with(|scratch| input_line_with(st, env, f, &mut scratch.borrow_mut()));
+    let mut scratch = mem::take(&mut env.line_scratch);
+    let more = input_line_with(st, env, f, &mut scratch);
+    env.line_scratch = scratch;
     f.sync(env);
     more
 }
@@ -614,7 +612,7 @@ pub(crate) fn may_write(env: &mut EngineEnv, path: &[u8]) -> bool {
         return false;
     }
     match path.iter().rposition(|&b| b == b'/') {
-        Some(slash) => directory_exists(env, &path[..slash]),
+        Some(slash) => env.directory_exists(&path[..slash]),
         None => true,
     }
 }

@@ -42,6 +42,16 @@ pub(crate) struct CheckpointLadder<B> {
     verify_rewinds: bool,
 }
 
+/// An empty ladder, the placeholder while an operation's fences hold the real one.
+impl<B> Default for CheckpointLadder<B> {
+    fn default() -> Self {
+        CheckpointLadder {
+            rungs: Vec::new(),
+            verify_rewinds: false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct RestoreMismatch {
     rung: usize,

@@ -31,6 +31,12 @@
 //! implements the [`DriverHooks`] trait. The [`MinimalDriver`] struct provides
 //! a minimal implementation that only requires you to provide an [`IoProvider`]
 //! implementation.
+//!
+//! The services themselves live in [`BridgeHost`]: hooks, status and settings,
+//! with lookups that hand out owned handles. A Rust engine can keep a host for
+//! as long as it likes, owning it ([`Held::Owned`]) or borrowing a launcher's
+//! ([`CoreBridgeLauncher::host`]). A [`CoreBridgeState`] is a host plus the id
+//! tables C code needs, and borrows its host for as long as the C code runs.
 
 use flate2::{Compression, GzBuilder, read::GzDecoder};
 use md5::{Digest, Md5};
@@ -449,9 +455,6 @@ pub struct CoreBridgeState<'a, 'h> {
     input_handles: Vec<Option<InputHandle>>,
 
     output_handles: Vec<Option<OutputHandle>>,
-
-    /// The filesystem path of the latest input, for SyncTeX.
-    latest_input_path: Option<PathBuf>,
 
     /// How [`CoreBridgeState::input_open`] found the latest input.
     latest_input_found: FoundAs,
@@ -905,7 +908,6 @@ impl<'a, 'h> CoreBridgeState<'a, 'h> {
             host,
             output_handles: Vec::new(),
             input_handles: Vec::new(),
-            latest_input_path: None,
             latest_input_found: FoundAs::Asked,
         }
     }
@@ -942,12 +944,6 @@ impl<'a, 'h> CoreBridgeState<'a, 'h> {
     /// How the latest input was found.
     pub fn latest_input_found(&self) -> &FoundAs {
         &self.latest_input_found
-    }
-
-    /// The filesystem path of the most recently opened input, if it is known,
-    /// exposed and UTF-8.
-    pub fn latest_input_abspath(&self) -> Option<&str> {
-        self.host.exposed_path(self.latest_input_path.as_deref())
     }
 
     /// Write the MD5 digest of file `name` to `dest`, returning true on failure.
@@ -1008,7 +1004,6 @@ impl<'a, 'h> CoreBridgeState<'a, 'h> {
     fn push_input(&mut self, opened: Option<OpenedInput>) -> Option<InputId> {
         let opened = opened?;
         self.input_handles.push(Some(opened.handle));
-        self.latest_input_path = opened.path;
         self.latest_input_found = opened.found;
         InputId::new(self.input_handles.len())
     }
@@ -1051,13 +1046,6 @@ impl<'a, 'h> CoreBridgeState<'a, 'h> {
 
     fn input_read_partial(&mut self, handle: InputId, buf: &mut [u8]) -> Result<usize> {
         self.get_input(handle).read(buf).map_err(Error::from)
-    }
-
-    /// Read up to `buf.len()` bytes of an input. Returns 0 at its end or after
-    /// reporting a failure.
-    pub fn input_read_some(&mut self, id: InputId, buf: &mut [u8]) -> usize {
-        let handle = self.input_handles[id.idx()].as_mut().unwrap();
-        self.host.read_input_some(handle, buf)
     }
 
     /// Get one byte from an input, or `None` at its end or after reporting a failure.

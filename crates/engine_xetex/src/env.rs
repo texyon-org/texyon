@@ -1,20 +1,41 @@
 //! What the engine reaches the outside world through, lent for each operation.
 
-use texyon_bridge_core::BridgeHost;
+use std::borrow::Cow;
+
+use texyon_bridge_core::{BridgeHost, CoreBridgeState, Diagnostic};
 use texyon_io_base::OutputHandle;
 
 use std::collections::BTreeSet;
 
+use crate::files::io::LineScratch;
 use crate::preview::replay::adapter::SnapshotSources;
 use crate::preview::replay::source::{SourcePath, SourceSnapshot};
+use crate::preview::session::FenceController;
 
-/// The engine's environment: never part of [`crate::state::EngineState`], so
-/// checkpoints and rewinds leave it alone.
+/// The engine's environment: its owner lends it to each operation, apart from
+/// the typesetting state, so checkpoints and rewinds leave it alone.
 pub struct EngineEnv<'h> {
     pub(crate) host: BridgeHost<'h>,
     outputs: OutputFiles,
-    /// The preview's sources while an operation runs.
-    sources: Option<SnapshotSources>,
+    /// The preview's state while one of its operations runs.
+    operation: Option<PreviewOperation>,
+    pub(crate) line_scratch: LineScratch,
+}
+
+/// `bytes` as bridge-core saw them through a C string: empty when they hold a NUL.
+fn c_view(bytes: &[u8]) -> Cow<'_, str> {
+    if bytes.contains(&0) {
+        Cow::Borrowed("")
+    } else {
+        String::from_utf8_lossy(bytes)
+    }
+}
+
+/// What a preview operation keeps while it runs: the sources it reads and the
+/// fences it captures.
+pub(crate) struct PreviewOperation {
+    pub(crate) sources: SnapshotSources,
+    pub(crate) fences: Option<FenceController>,
 }
 
 /// Bytes a buffered output collects before it writes them out.
@@ -65,7 +86,8 @@ impl<'h> EngineEnv<'h> {
         EngineEnv {
             host,
             outputs: OutputFiles::default(),
-            sources: None,
+            operation: None,
+            line_scratch: LineScratch::default(),
         }
     }
 
@@ -104,27 +126,93 @@ impl<'h> EngineEnv<'h> {
         snapshot: SourceSnapshot,
         written: BTreeSet<SourcePath>,
     ) {
-        self.sources = Some(SnapshotSources::new(snapshot, written));
+        self.operation = Some(PreviewOperation {
+            sources: SnapshotSources::new(snapshot, written),
+            fences: None,
+        });
     }
 
-    /// Stops serving the snapshot, returning the files the engine has written.
+    /// Ends the preview operation, returning the files the engine has written.
     pub(crate) fn take_sources(&mut self) -> BTreeSet<SourcePath> {
-        self.sources
+        self.operation
             .take()
-            .map(SnapshotSources::into_written)
+            .map(|operation| operation.sources.into_written())
             .unwrap_or_default()
     }
 
     /// The installed sources, if an operation is serving a snapshot.
     pub(crate) fn sources(&mut self) -> Option<&mut SnapshotSources> {
-        self.sources.as_mut()
+        self.operation
+            .as_mut()
+            .map(|operation| &mut operation.sources)
+    }
+
+    /// The running preview operation.
+    pub(crate) fn operation(&mut self) -> Option<&mut PreviewOperation> {
+        self.operation.as_mut()
+    }
+
+    /// Runs `f` with a bridge state over the host, for code that names files
+    /// by id. Files it leaves open are dropped with the state.
+    pub(crate) fn bridge_state<R>(
+        &mut self,
+        f: impl FnOnce(&mut CoreBridgeState<'_, '_>) -> R,
+    ) -> R {
+        // C reports straight to the host, after what the terminal holds.
+        self.flush_terminal();
+        f(&mut CoreBridgeState::new(&mut self.host))
+    }
+
+    /// Whether `dir` exists in the sources or the document, so a file can be created in it.
+    pub(crate) fn directory_exists(&mut self, dir: &[u8]) -> bool {
+        let dir = String::from_utf8_lossy(dir);
+        self.sources()
+            .is_some_and(|sources| sources.holds_directory(&dir))
+            || self.host.directory_exists(&dir)
+    }
+
+    /// Reports a finished diagnostic to the host.
+    pub(crate) fn report(&mut self, diag: Diagnostic) {
+        self.flush_terminal();
+        self.host.finish_diagnostic(diag);
+    }
+
+    /// Issues `text` as a warning, empty when it holds a NUL.
+    pub(crate) fn warn(&mut self, text: &str) {
+        self.flush_terminal();
+        self.host.issue_warning(&c_view(text.as_bytes()));
+    }
+
+    /// Issues `text` as an error, empty when it holds a NUL.
+    pub(crate) fn error(&mut self, text: &str) {
+        self.flush_terminal();
+        self.host.issue_error(&c_view(text.as_bytes()));
+    }
+
+    /// Asks the host to run `cmd`.
+    pub(crate) fn shell_escape(&mut self, cmd: &[u16]) {
+        match String::from_utf16(cmd) {
+            Ok(cmd) => {
+                self.host.shell_escape(&cmd);
+            }
+            Err(err) => self
+                .host
+                .issue_error(&format!("command was not valid UTF-16: {err}")),
+        }
+    }
+
+    /// The MD5 digest of file `path`, `None` if it cannot be read.
+    pub(crate) fn file_md5(&mut self, path: &[u8]) -> Option<[u8; 16]> {
+        let mut digest = [0; 16];
+        let failed = self.host.get_file_md5(&c_view(path), &mut digest);
+        (!failed).then_some(digest)
     }
 
     /// Opens output `path`, outside the files the env keeps.
     pub(crate) fn open(&mut self, path: &[u8], is_gz: bool) -> Option<OutputHandle> {
         let path = String::from_utf8_lossy(path);
-        if let Some(sources) = &mut self.sources {
-            sources.record_written(&path);
+        if let Some(operation) = &mut self.operation {
+            operation.sources.record_written(&path);
         }
         self.host.open_output(&path, is_gz)
     }
@@ -293,7 +381,6 @@ mod tests {
     use texyon_status_base::{MessageKind, StatusBackend};
 
     use super::*;
-    use crate::ffi::bridge::issue_warning;
 
     type Bytes = Rc<RefCell<Vec<u8>>>;
 
@@ -360,7 +447,7 @@ mod tests {
             assert!(env.open_terminal());
             env.terminal_put(b"(main.tex");
             assert!(stdout.borrow().is_empty());
-            issue_warning(&mut env, "late");
+            env.warn("late");
         }
         assert_eq!(status.seen, [b"(main.tex".to_vec()]);
     }

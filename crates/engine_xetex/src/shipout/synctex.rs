@@ -6,7 +6,6 @@ use super::{ONE_INCH, RuleDims, ShipoutState};
 use crate::base::params::IntPar;
 use crate::base::units::{MemAddr, MemPtr};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{issue_error, issue_warning};
 use crate::memory::mem::MemState;
 use crate::memory::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
 use crate::preview::sync_index::{PreviewSyncIndex, RecordKind};
@@ -334,10 +333,7 @@ pub fn synctex_sheet(st: &mut EngineState, env: &mut EngineEnv, mag: i32, job_na
     if synctex.flags.off {
         if st.eqtb.synctex_enabled() && !synctex.flags.warn {
             synctex.flags.warn = true;
-            issue_warning(
-                env,
-                "SyncTeX was disabled -- changing the value of \\synctex has no effect",
-            );
+            env.warn("SyncTeX was disabled -- changing the value of \\synctex has no effect");
         }
         return;
     }
@@ -487,10 +483,10 @@ pub fn synctex_horizontal_rule_or_glue(
         Ok(AnyNode::Glue(g)) => (st.mem[g].sync.tag, st.mem[g].sync.line),
         Ok(AnyNode::Kern(k)) => (st.mem[k].sync.tag, st.mem[k].sync.line),
         _ => {
-            issue_error(
-                env,
-                &format!("unknown node type {} in SyncTeX", st.mem.type_code(p)),
-            );
+            env.error(&format!(
+                "unknown node type {} in SyncTeX",
+                st.mem.type_code(p)
+            ));
             return;
         }
     };

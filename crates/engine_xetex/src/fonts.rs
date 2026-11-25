@@ -8,7 +8,6 @@ use crate::base::consts::{EMPTY_STRING, NULL_FONT, TOO_BIG_CHAR};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled, StrNumber};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::FileFormat;
 use crate::ffi::teckit_icu::{FontMappingHandle, LinebreakHandle};
 use crate::files::io::{FileName, ScannedName, open_input_file};
 use crate::fonts::ext::{
@@ -26,6 +25,7 @@ use crate::print::{
 use crate::state::EngineState;
 use crate::tables::cs::CsId;
 use crate::tables::eqtb::EqtbState;
+use texyon_bridge_core::FileFormat;
 
 pub(crate) mod ext;
 pub(crate) mod ot_math;

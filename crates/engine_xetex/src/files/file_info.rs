@@ -2,17 +2,20 @@
 
 use crate::base::units::StrNumber;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{FileFormat, get_file_md5, input_open};
 use crate::ffi::clock::{make_pdf_time, nul_terminated};
 use crate::files::input_file::InputSource;
 use crate::print::errors::Abort;
 use crate::tables::string_pool::StringsState;
+use texyon_bridge_core::FileFormat;
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 impl StringsState {
     fn open_tex_file(&self, env: &mut EngineEnv, s: StrNumber) -> Option<InputSource> {
-        Some(input_open(env, &self.texstring_bytes(s), FileFormat::Tex, false)?.source)
+        Some(
+            env.open_input(&self.texstring_bytes(s), FileFormat::Tex, false)?
+                .source,
+        )
     }
 
     pub(crate) fn file_size(&mut self, env: &mut EngineEnv, s: StrNumber) -> Result<(), Abort> {
@@ -88,7 +91,7 @@ impl StringsState {
     pub(crate) fn md5_sum(&mut self, env: &mut EngineEnv, s: StrNumber, file: bool) {
         let xname = self.texstring_bytes(s);
         let digest = if file {
-            get_file_md5(env, &xname)
+            env.file_md5(&xname)
         } else {
             Some(texyon_bridge_core::data_md5(&xname))
         };

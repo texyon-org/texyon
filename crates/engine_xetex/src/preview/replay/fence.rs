@@ -159,11 +159,11 @@ mod tests {
 
     use super::*;
     use crate::base::units::BufPos;
-    use crate::ffi::bridge::FileFormat;
     use crate::files::input_file::{Decoder, Encoding, InputSource};
     use crate::files::io::input_line;
     use crate::preview::replay::adapter::MemoryInputId;
     use crate::scanning::input::InputBuffer;
+    use texyon_bridge_core::FileFormat;
 
     fn snapshot(revision: u64, primary: &[u8], child: &[u8]) -> SourceSnapshot {
         SourceSnapshot::new_with_revision(
