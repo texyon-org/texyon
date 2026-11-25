@@ -421,7 +421,7 @@ impl SaveBundle {
 }
 
 /// Open input and read slots are operation resources that resume replay
-/// rebuilds, so a rung never owns a live UFile.
+/// rebuilds, so a rung never owns a live input file.
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: StackBundle<InputState>,

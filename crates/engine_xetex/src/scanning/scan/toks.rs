@@ -139,13 +139,13 @@ pub(crate) fn read_toks(
             st.input.cur_input.limit = BufPos::ZERO;
             return Err(Abort::Fatal(fatal));
         } else if st.input.read_open[m] == JUST_OPEN {
-            if input_slot_line(st, FileSlot::Read(m))? != 0 {
+            if input_slot_line(st, FileSlot::Read(m))? {
                 st.input.read_open[m] = NORMAL as u8;
             } else {
                 close_read_file(st, m)?;
             }
         } else {
-            if input_slot_line(st, FileSlot::Read(m))? == 0 {
+            if !input_slot_line(st, FileSlot::Read(m))? {
                 close_read_file(st, m)?;
                 if st.scanner.align_state != 1_000_000 {
                     runaway(st);

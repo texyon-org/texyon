@@ -10,7 +10,8 @@ use crate::base::params::{IntPar, TokPar};
 use crate::base::stack::TexStack;
 use crate::base::token::{TokCursor, Token, TokenList};
 use crate::base::units::{BufPos, MemPtr, SavePtr, StrNumber};
-use crate::files::io::{UFile, u_close};
+use crate::files::input_file::InputFile;
+use crate::files::io::u_close;
 use crate::memory::mem::MemState;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::{NodePtr, PseudoFileNode};
@@ -532,7 +533,7 @@ pub(crate) enum InputSlot {
     #[default]
     Empty,
     Terminal,
-    Open(Box<UFile>),
+    Open(Box<InputFile>),
 }
 
 #[derive(Default)]

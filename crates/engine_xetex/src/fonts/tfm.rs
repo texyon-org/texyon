@@ -5,7 +5,7 @@ use std::rc::Rc;
 use super::{FontSize, LigChar};
 use crate::base::scaled_math::xn_over_d;
 use crate::base::units::Scaled;
-use crate::ffi::bridge::input_getc;
+use crate::files::input_file::InputFile;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct LigKernIdx(u16);
@@ -351,20 +351,16 @@ pub(crate) struct Tfm {
 
 const EOF: i32 = -1;
 
-fn getc(handle: usize) -> i32 {
-    input_getc(handle) as i32
-}
-
-fn read_fifteen(handle: usize) -> Result<i32, TfmError> {
-    let x = getc(handle);
+fn read_fifteen(file: &mut InputFile) -> Result<i32, TfmError> {
+    let x = file.getc();
     if x > 127 || x == EOF {
         return Err(TfmError::Bad);
     }
-    Ok(x * 256 + getc(handle))
+    Ok(x * 256 + file.getc())
 }
 
-fn read_bytes(handle: usize) -> Result<[i32; 4], TfmError> {
-    let bytes = [getc(handle), getc(handle), getc(handle), getc(handle)];
+fn read_bytes(file: &mut InputFile) -> Result<[i32; 4], TfmError> {
+    let bytes = [file.getc(), file.getc(), file.getc(), file.getc()];
     if bytes.contains(&EOF) {
         return Err(TfmError::Bad);
     }
@@ -392,8 +388,8 @@ impl FixScale {
         }
     }
 
-    fn read(&self, handle: usize) -> Result<Scaled, TfmError> {
-        let [a, b, c, d] = read_bytes(handle)?;
+    fn read(&self, file: &mut InputFile) -> Result<Scaled, TfmError> {
+        let [a, b, c, d] = read_bytes(file)?;
         let z = self.z;
         let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / self.beta;
         match a {
@@ -403,8 +399,8 @@ impl FixScale {
         }
     }
 
-    fn read_n(&self, handle: usize, n: i32) -> Result<Vec<Scaled>, TfmError> {
-        (0..n).map(|_| self.read(handle)).collect()
+    fn read_n(&self, file: &mut InputFile, n: i32) -> Result<Vec<Scaled>, TfmError> {
+        (0..n).map(|_| self.read(file)).collect()
     }
 }
 
@@ -416,21 +412,21 @@ fn char16(v: i32) -> Result<u16, TfmError> {
     u16::try_from(v).map_err(|_| TfmError::Bad)
 }
 
-/// Reads the TFM file open at `handle` at size `s`. `room` says whether a
+/// Reads the TFM `file` at size `s`. `room` says whether a
 /// font of that many `font_info` words still fits. Sets `too_big` when a
 /// `scaled` size reached 2048pt, so the design size was kept.
 pub(crate) fn read_tfm(
-    handle: usize,
+    file: &mut InputFile,
     s: FontSize,
     room: impl FnOnce(i32) -> bool,
     too_big: &mut bool,
 ) -> Result<Tfm, TfmError> {
     use TfmError::Bad;
 
-    let lf = read_fifteen(handle)?;
-    let mut lh = read_fifteen(handle)?;
-    let mut bc = read_fifteen(handle)?;
-    let mut ec = read_fifteen(handle)?;
+    let lf = read_fifteen(file)?;
+    let mut lh = read_fifteen(file)?;
+    let mut bc = read_fifteen(file)?;
+    let mut ec = read_fifteen(file)?;
     if bc > ec + 1 || ec > 255 {
         return Err(Bad);
     }
@@ -438,14 +434,14 @@ pub(crate) fn read_tfm(
         bc = 1;
         ec = 0;
     }
-    let nw = read_fifteen(handle)?;
-    let nh = read_fifteen(handle)?;
-    let nd = read_fifteen(handle)?;
-    let ni = read_fifteen(handle)?;
-    let nl = read_fifteen(handle)?;
-    let nk = read_fifteen(handle)?;
-    let ne = read_fifteen(handle)?;
-    let np = read_fifteen(handle)?;
+    let nw = read_fifteen(file)?;
+    let nh = read_fifteen(file)?;
+    let nd = read_fifteen(file)?;
+    let ni = read_fifteen(file)?;
+    let nl = read_fifteen(file)?;
+    let nk = read_fifteen(file)?;
+    let ne = read_fifteen(file)?;
+    let np = read_fifteen(file)?;
     if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
         return Err(Bad);
     }
@@ -461,16 +457,16 @@ pub(crate) fn read_tfm(
         return Err(Bad);
     }
 
-    let check = read_bytes(handle)?.map(|b| b as u8);
-    let mut z = read_fifteen(handle)?;
-    z = z * 256 + getc(handle);
-    z = (z * 16) + (getc(handle) / 16);
+    let check = read_bytes(file)?.map(|b| b as u8);
+    let mut z = read_fifteen(file)?;
+    z = z * 256 + file.getc();
+    z = (z * 16) + (file.getc() / 16);
     if z < 65_536 {
         return Err(Bad);
     }
     while lh > 2 {
         for _ in 0..4 {
-            getc(handle);
+            file.getc();
         }
         lh -= 1;
     }
@@ -492,7 +488,7 @@ pub(crate) fn read_tfm(
 
     let mut char_words: Vec<[i32; 4]> = Vec::new();
     for current in bc..=ec {
-        let [a, b, c, d] = read_bytes(handle)?;
+        let [a, b, c, d] = read_bytes(file)?;
         if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
             return Err(Bad);
         }
@@ -523,10 +519,10 @@ pub(crate) fn read_tfm(
     let char_exists = |ch: i32| (bc..=ec).contains(&ch) && char_words[(ch - bc) as usize][0] > 0;
 
     let scale = FixScale::new(z);
-    let widths = scale.read_n(handle, nw)?;
-    let heights = scale.read_n(handle, nh)?;
-    let depths = scale.read_n(handle, nd)?;
-    let italics = scale.read_n(handle, ni)?;
+    let widths = scale.read_n(file, nw)?;
+    let heights = scale.read_n(file, nh)?;
+    let depths = scale.read_n(file, nd)?;
+    let italics = scale.read_n(file, ni)?;
     if [&widths, &heights, &depths, &italics]
         .iter()
         .any(|t| t[0] != Scaled::ZERO)
@@ -538,7 +534,7 @@ pub(crate) fn read_tfm(
     let mut bchar = 256;
     let mut lig_words: Vec<[i32; 4]> = Vec::new();
     for k in 0..nl {
-        let [a, b, c, d] = read_bytes(handle)?;
+        let [a, b, c, d] = read_bytes(file)?;
         if a > 128 {
             if 256 * c + d >= nl {
                 return Err(Bad);
@@ -567,11 +563,11 @@ pub(crate) fn read_tfm(
         lig_words.push([a, b, c, d]);
     }
 
-    let kerns = scale.read_n(handle, nk)?;
+    let kerns = scale.read_n(file, nk)?;
 
     let mut exten = Vec::new();
     for _ in 0..ne {
-        let [a, b, c, d] = read_bytes(handle)?;
+        let [a, b, c, d] = read_bytes(file)?;
         for ch in [a, b, c] {
             if ch != 0 && !char_exists(ch) {
                 return Err(Bad);
@@ -594,18 +590,18 @@ pub(crate) fn read_tfm(
     for k in 1..=np {
         params.push(if k == 1 {
             // The slant is an unscaled fix_word.
-            let mut sw = getc(handle);
+            let mut sw = file.getc();
             if sw == EOF {
                 return Err(Bad);
             }
             if sw > 127 {
                 sw -= 256;
             }
-            sw = sw * 256 + getc(handle);
-            sw = sw * 256 + getc(handle);
-            Scaled::from_raw((sw * 16) + (getc(handle) / 16))
+            sw = sw * 256 + file.getc();
+            sw = sw * 256 + file.getc();
+            Scaled::from_raw((sw * 16) + (file.getc() / 16))
         } else {
-            scale.read(handle)?
+            scale.read(file)?
         });
     }
     params.resize(params.len().max(7), Scaled::ZERO);

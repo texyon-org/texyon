@@ -14,8 +14,8 @@ use texyon_bridge_core::{CoreBridgeState, FoundAs, InputId, OutputId};
 pub(crate) use texyon_bridge_core::{Diagnostic, FileFormat};
 
 use crate::preview::replay::adapter::{
-    clear_last_path, close, get_size, getc, holds_directory, is_mem, last_abspath, open_named,
-    open_primary, opened_last, read, record_written, seek, ungetc,
+    clear_last_path, close, get_size, holds_directory, is_mem, last_abspath, open_named,
+    open_primary, opened_last, read, record_written, seek,
 };
 
 /// The bridge state of the current run. Every run holds the engine lock, so
@@ -130,18 +130,18 @@ pub(crate) fn input_get_mtime(handle: usize) -> libc::time_t {
     with_bridge(|es| es.input_get_mtime(input_id(handle))) as libc::time_t
 }
 
-pub(crate) fn input_getc(handle: usize) -> libc::c_int {
-    if let Some(value) = getc(handle) {
-        return value;
-    }
-    with_bridge(|es| es.input_getc(input_id(handle))).map_or(texyon_bridge_core::EOF, i32::from)
+/// Reads up to `buf.len()` bytes of `id`. Returns 0 at its end or after a reported failure.
+pub(crate) fn disk_read(id: InputId, buf: &mut [u8]) -> usize {
+    with_bridge(|es| es.input_read_some(id, buf))
 }
 
-pub(crate) fn input_ungetc(handle: usize, ch: libc::c_int) {
-    if ungetc(handle, ch).is_some() {
-        return;
-    }
-    with_bridge(|es| es.input_ungetc(input_id(handle), ch as u8));
+pub(crate) fn disk_rewind(id: InputId) {
+    with_bridge(|es| es.input_seek(id, SeekFrom::Start(0)));
+}
+
+/// Returns `true` on a serious internal close error.
+pub(crate) fn disk_close(id: InputId) -> bool {
+    with_bridge(|es| es.input_close(id))
 }
 
 #[must_use]

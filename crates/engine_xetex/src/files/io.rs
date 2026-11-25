@@ -2,8 +2,7 @@
 //! log and input-file lifecycle.
 
 use std::cell::RefCell;
-use std::io::Error;
-use std::{iter, mem, ptr, slice};
+use std::{iter, mem, slice};
 
 use texyon_bridge_core::EOF;
 
@@ -16,11 +15,12 @@ use crate::base::utf8;
 use crate::base::utf8::{BYTES_FROM_UTF8, OFFSETS_FROM_UTF8, next_utf8_char};
 use crate::engine::output_file_extension;
 use crate::ffi::bridge::{
-    FileFormat, directory_exists, input_getc, input_open, input_open_primary, input_ungetc,
-    last_input_abspath, last_input_found, output_close, output_flush, output_open,
+    FileFormat, directory_exists, input_open, input_open_primary, last_input_abspath,
+    last_input_found, output_close, output_flush, output_open,
 };
 pub(crate) use crate::ffi::bridge::{input_close, input_seek};
-use crate::ffi::teckit_icu::{FontMappingHandle, with_c_str};
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::files::input_file::{Decoder, Encoding, IcuConverter, InputFile, InputSource};
 use crate::print::diagnostic::warn_host;
 use crate::print::errors::{Abort, FilePrompt, prompt_file_name};
 use crate::print::{
@@ -53,45 +53,6 @@ const K_FORM_NFC: u16 = 0x0100;
 const K_FORM_NFD: u16 = 0x0200;
 pub(crate) const K_STATUS_NO_ERROR: libc::c_long = 0;
 
-#[cfg(target_endian = "little")]
-const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 8;
-#[cfg(target_endian = "big")]
-const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 7;
-
-/// An open input file with its encoding state. The layout is that of the
-/// C `UFILE`, which keeps the checkpoint format readable.
-#[repr(C)]
-pub(crate) struct UFile {
-    pub handle: usize,
-    pub saved_char: i64,
-    pub skip_next_lf: i16,
-    pub encoding_mode: i16,
-    pub conversion_data: *mut libc::c_void,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(
-    mem::size_of::<UFile>() == 32,
-    "UFile size mismatch with C UFILE"
-);
-
-impl UFile {
-    fn close_converter(&mut self) {
-        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
-            // SAFETY: `set_input_file_encoding` installed this converter for
-            // this file alone, and the pointer is cleared after closing.
-            unsafe { ucnv_close(self.conversion_data) };
-        }
-        self.conversion_data = ptr::null_mut();
-    }
-}
-
-impl Drop for UFile {
-    fn drop(&mut self) {
-        self.close_converter();
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(crate) enum FileSlot {
     Input(usize),
@@ -107,71 +68,46 @@ impl FileSlot {
     }
 }
 
-/// Runs `f` on the file in `slot`, which is detached from the state for the
-/// call. The terminal gets a stand-in with no handle, an empty slot `None`.
-pub(crate) fn with_slot_file<R>(
-    st: &mut EngineState,
-    slot: FileSlot,
-    f: impl FnOnce(&mut EngineState, &mut UFile) -> R,
-) -> Option<R> {
+/// Reads the next line of the file in `slot` into `buffer[first..last]`.
+/// Returns `false` at end of file.
+pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<bool, Abort> {
     let mut taken = mem::take(slot.get(st));
     let result = match &mut taken {
-        InputSlot::Empty => None,
-        InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
-        InputSlot::Open(file) => Some(f(st, file)),
+        InputSlot::Open(file) => input_line(st, file),
+        InputSlot::Empty | InputSlot::Terminal => Err(Abort::Internal(
+            "reads from synthetic \"terminal\" file #0 should never happen",
+        )),
     };
     *slot.get(st) = taken;
     result
 }
 
-pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<libc::c_int, Abort> {
-    with_slot_file(st, slot, input_line).expect("input_line on an empty input slot")
-}
-
-impl UFile {
-    fn terminal() -> UFile {
-        UFile {
-            handle: INVALID_HANDLE,
-            saved_char: -1,
-            skip_next_lf: 0,
-            encoding_mode: UTF8 as i16,
-            conversion_data: ptr::null_mut(),
+/// Switches the file in `slot` to `mode`. On the terminal the switch only reports
+/// a converter that fails to open.
+pub(crate) fn set_slot_encoding(
+    st: &mut EngineState,
+    slot: FileSlot,
+    mode: i32,
+    encoding_data: i32,
+) -> Result<(), Abort> {
+    let mut taken = mem::take(slot.get(st));
+    match &mut taken {
+        InputSlot::Empty => {}
+        InputSlot::Terminal => {
+            decoder_for(st, mode, encoding_data);
+        }
+        InputSlot::Open(file) => {
+            if let Some(decoder) = decoder_for(st, mode, encoding_data) {
+                file.decoder = decoder;
+            }
         }
     }
-}
-
-// ICU checks the incoming UErrorCode, so it must be zeroed before each call.
-unsafe extern "C" {
-    #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_open(converter_name: *const libc::c_char, err: *mut i32) -> *mut libc::c_void;
-    #[link_name = concat!("ucnv_close", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_close(converter: *mut libc::c_void);
-    #[link_name = concat!("ucnv_toAlgorithmic", env!("ICU_VERSION_SUFFIX"))]
-    fn ucnv_toAlgorithmic(
-        algorithmic_type: libc::c_int,
-        cnv: *mut libc::c_void,
-        target: *mut libc::c_char,
-        target_capacity: i32,
-        source: *const libc::c_char,
-        source_length: i32,
-        err: *mut i32,
-    ) -> i32;
-}
-
-fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
-    let mut err: i32 = 0;
-    let cnv = with_c_str(name, |name| {
-        // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
-        unsafe { ucnv_open(name, &mut err) }
-    });
-    if cnv.is_null() { Err(err) } else { Ok(cnv) }
+    *slot.get(st) = taken;
+    Ok(())
 }
 
 pub(crate) fn icu_converter_exists(name: &[u8]) -> Result<(), libc::c_int> {
-    let cnv = icu_converter_open(name)?;
-    // SAFETY: `cnv` was just opened and is not used again.
-    unsafe { ucnv_close(cnv) };
-    Ok(())
+    IcuConverter::open(name).map(drop)
 }
 
 fn utf32_bytes(units: &[u32]) -> &[u8] {
@@ -189,36 +125,18 @@ trait Utf32Unit {}
 impl Utf32Unit for i32 {}
 impl Utf32Unit for u32 {}
 
-fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i32, libc::c_int) {
-    let mut err: i32 = 0;
-    // SAFETY: `cnv` is the open converter of an input file, both buffers are
-    // valid for the lengths passed and `err` is a valid out-parameter.
-    let len = unsafe {
-        ucnv_toAlgorithmic(
-            UCNV_UTF32_NATIVE_ENDIAN,
-            cnv,
-            target.as_mut_ptr().cast(),
-            target.len() as i32,
-            source.as_ptr().cast(),
-            source.len() as i32,
-            &mut err,
-        )
-    };
-    (len, err)
-}
-
 pub(crate) struct FoundInput {
     /// The path plus the extension the bridge added, as TeX Live prints it.
     pub name: Vec<u8>,
     pub abspath: Vec<u8>,
 }
 
-/// Opens input `path`. `None` means it was not found.
+/// Opens input `path` undecoded. `None` means it was not found.
 pub(crate) fn open_input_file(
     st: &mut EngineState,
     path: &[u8],
     filefmt: FileFormat,
-) -> Option<(usize, FoundInput)> {
+) -> Option<(InputFile, FoundInput)> {
     let handle = if filefmt == FileFormat::TexyonPrimary {
         input_open_primary()
     } else if path.first() == Some(&b'|') {
@@ -228,10 +146,7 @@ pub(crate) fn open_input_file(
     } else {
         input_open(path, filefmt, false)
     };
-
-    if handle == INVALID_HANDLE {
-        return None;
-    }
+    let source = InputSource::from_handle(handle)?;
 
     let name = if filefmt == FileFormat::TexyonPrimary {
         path.to_vec()
@@ -239,7 +154,7 @@ pub(crate) fn open_input_file(
         last_found_name(path)
     };
     let abspath = last_input_abspath();
-    Some((handle, FoundInput { name, abspath }))
+    Some((InputFile::new(source), FoundInput { name, abspath }))
 }
 
 /// The name the last input asked as `path` was found under, as kpathsea returns it.
@@ -253,22 +168,14 @@ pub(crate) fn u_open_in(
     filefmt: FileFormat,
     mut mode: i32,
     encoding_data: i32,
-) -> Result<Option<(Box<UFile>, FoundInput)>, Abort> {
-    let Some((handle, found)) = open_input_file(st, path, filefmt) else {
+) -> Result<Option<(Box<InputFile>, FoundInput)>, Abort> {
+    let Some((mut f, found)) = open_input_file(st, path, filefmt) else {
         return Ok(None);
     };
 
-    let mut f = Box::new(UFile {
-        handle,
-        saved_char: -1,
-        skip_next_lf: 0,
-        encoding_mode: 0,
-        conversion_data: ptr::null_mut(),
-    });
-
     if mode == AUTO {
-        let b1 = input_getc(f.handle);
-        let b2 = input_getc(f.handle);
+        let b1 = f.getc();
+        let b2 = f.getc();
 
         if b1 == 0xfe && b2 == 0xff {
             mode = UTF16BE;
@@ -276,41 +183,41 @@ pub(crate) fn u_open_in(
             mode = UTF16LE;
         } else if b1 == 0 && b2 != 0 {
             mode = UTF16BE;
-            input_seek(f.handle, 0);
+            f.rewind();
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
-            input_seek(f.handle, 0);
-        } else if b1 == 0xEF && b2 == 0xBB && input_getc(f.handle) == 0xBF {
+            f.rewind();
+        } else if b1 == 0xEF && b2 == 0xBB && f.getc() == 0xBF {
             mode = UTF8;
         }
 
         if mode == AUTO {
-            input_seek(f.handle, 0);
+            f.rewind();
             mode = UTF8;
         }
+        f.sync();
     }
 
-    set_input_file_encoding(st, &mut f, mode, encoding_data)?;
-    Ok(Some((f, found)))
+    if let Some(decoder) = decoder_for(st, mode, encoding_data) {
+        f.decoder = decoder;
+    }
+    Ok(Some((Box::new(f), found)))
 }
 
-pub(crate) fn set_input_file_encoding(
-    st: &mut EngineState,
-    f: &mut UFile,
-    mode: i32,
-    encoding_data: i32,
-) -> Result<(), Abort> {
-    f.close_converter();
-
-    match mode {
-        UTF8 | UTF16BE | UTF16LE | RAW => {
-            f.encoding_mode = mode as i16;
-        }
+/// The decoder for input mode `mode`, `None` for a mode that names none. A
+/// converter that fails to open is reported and reads raw bytes.
+fn decoder_for(st: &mut EngineState, mode: i32, encoding_data: i32) -> Option<Decoder> {
+    let encoding = match mode {
+        UTF8 => Encoding::Utf8,
+        UTF16BE => Encoding::Utf16Be,
+        UTF16LE => Encoding::Utf16Le,
+        RAW => Encoding::Raw,
         ICUMAPPING => {
             let name = st
                 .strings
                 .texstring_bytes(StrNumber::from_raw(encoding_data));
-            match icu_converter_open(&name) {
+            match IcuConverter::open(&name) {
+                Ok(cnv) => return Some(Decoder::Icu(cnv)),
                 Err(err) => {
                     begin_diagnostic(st);
                     print_nl(st, b'E');
@@ -320,17 +227,13 @@ pub(crate) fn set_input_file_encoding(
                     print(st, &name[..]);
                     print(st, "'; reading as raw bytes");
                     end_diagnostic(st, true);
-                    f.encoding_mode = RAW as i16;
-                }
-                Ok(cnv) => {
-                    f.encoding_mode = ICUMAPPING as i16;
-                    f.conversion_data = cnv;
+                    Encoding::Raw
                 }
             }
         }
-        _ => {}
-    }
-    Ok(())
+        _ => return None,
+    };
+    Some(Decoder::Plain(encoding))
 }
 
 #[derive(Default)]
@@ -346,10 +249,6 @@ thread_local! {
 
 fn is_line_end(c: i32) -> bool {
     c == EOF || c == i32::from(b'\n') || c == i32::from(b'\r')
-}
-
-fn is_true_eof(c: i32) -> bool {
-    c == EOF && Error::last_os_error().raw_os_error() != Some(libc::EINTR)
 }
 
 fn line_too_long() -> Abort {
@@ -395,27 +294,23 @@ fn apply_normalization(
 }
 
 /// Reads one line of `f` into `buffer[first..last]`, decoding and optionally
-/// normalizing it. Returns 0 at end of file.
-pub(crate) fn input_line(st: &mut EngineState, f: &mut UFile) -> Result<libc::c_int, Abort> {
-    LINE_SCRATCH.with(|scratch| input_line_with(st, f, &mut scratch.borrow_mut()))
+/// normalizing it. Returns `false` at end of file.
+pub(crate) fn input_line(st: &mut EngineState, f: &mut InputFile) -> Result<bool, Abort> {
+    let more = LINE_SCRATCH.with(|scratch| input_line_with(st, f, &mut scratch.borrow_mut()));
+    f.sync();
+    more
 }
 
 fn input_line_with(
     st: &mut EngineState,
-    f: &mut UFile,
+    f: &mut InputFile,
     scratch: &mut LineScratch,
-) -> Result<libc::c_int, Abort> {
+) -> Result<bool, Abort> {
     let norm = if st.eqtb.ints.values().is_empty() {
         0
     } else {
         st.eqtb.int_par(IntPar::XetexInputNormalization)
     };
-
-    if f.handle == INVALID_HANDLE {
-        return Err(Abort::Internal(
-            "reads from synthetic \"terminal\" file #0 should never happen",
-        ));
-    }
 
     st.input.last = st.input.first;
     let buf_size = st.input.buf_size.index();
@@ -424,23 +319,20 @@ fn input_line_with(
     }
 
     let mut i;
-    if i32::from(f.encoding_mode) == ICUMAPPING {
+    if matches!(f.decoder, Decoder::Icu(_)) {
         scratch.bytes.resize(buf_size + 1, 0);
         let mut bytes_read = 0;
 
-        i = input_getc(f.handle);
-        if f.skip_next_lf != 0 {
-            f.skip_next_lf = 0;
-            if i == b'\n' as libc::c_int {
-                i = input_getc(f.handle);
-            }
+        i = f.getc();
+        if mem::take(&mut f.pending_lf) && i == i32::from(b'\n') {
+            i = f.getc();
         }
 
         if !is_line_end(i) {
             scratch.bytes[bytes_read] = i as u8;
             bytes_read += 1;
             while bytes_read < buf_size {
-                i = input_getc(f.handle);
+                i = f.getc();
                 if is_line_end(i) {
                     break;
                 }
@@ -449,40 +341,39 @@ fn input_line_with(
             }
         }
 
-        if is_true_eof(i) && bytes_read == 0 {
-            return Ok(0);
+        if i == EOF && bytes_read == 0 {
+            return Ok(false);
         }
         if !is_line_end(i) {
             return Err(line_too_long());
         }
 
-        let cnv = f.conversion_data;
+        let Decoder::Icu(cnv) = &mut f.decoder else {
+            unreachable!("checked above");
+        };
         let source = &scratch.bytes[..bytes_read];
         if norm == 1 || norm == 2 {
-            let (len, error_code) = icu_to_utf32(cnv, utf32_bytes_mut(&mut scratch.utf32), source);
+            let (len, error_code) = cnv.decode(utf32_bytes_mut(&mut scratch.utf32), source);
             if error_code != 0 {
                 conversion_error(st, error_code);
-                return Ok(0);
+                return Ok(false);
             }
             let units = &scratch.utf32[..(len / 4) as usize];
             apply_normalization(st, &mut scratch.normalizers, units, norm)?;
         } else {
             let first = st.input.first.index();
             let out = utf32_bytes_mut(&mut st.input.buffer.0[first..buf_size]);
-            let (len, error_code) = icu_to_utf32(cnv, out, source);
+            let (len, error_code) = cnv.decode(out, source);
             if error_code != 0 {
                 conversion_error(st, error_code);
-                return Ok(0);
+                return Ok(false);
             }
             st.input.last = st.input.first + len / 4;
         }
     } else {
-        i = get_uni_c(st, f)?;
-        if f.skip_next_lf != 0 {
-            f.skip_next_lf = 0;
-            if i == i32::from(b'\n') {
-                i = get_uni_c(st, f)?;
-            }
+        i = get_uni_c(st, f);
+        if mem::take(&mut f.pending_lf) && i == i32::from(b'\n') {
+            i = get_uni_c(st, f);
         }
 
         if norm == 1 || norm == 2 {
@@ -491,7 +382,7 @@ fn input_line_with(
                 scratch.utf32[len] = i as u32;
                 len += 1;
                 while len < buf_size {
-                    i = get_uni_c(st, f)?;
+                    i = get_uni_c(st, f);
                     if is_line_end(i) {
                         break;
                     }
@@ -500,8 +391,8 @@ fn input_line_with(
                 }
             }
 
-            if is_true_eof(i) && len == 0 {
-                return Ok(0);
+            if i == EOF && len == 0 {
+                return Ok(false);
             }
             if !is_line_end(i) {
                 return Err(line_too_long());
@@ -512,7 +403,7 @@ fn input_line_with(
                 st.input.buffer[st.input.last] = i;
                 st.input.last += 1;
                 while st.input.last < st.input.buf_size {
-                    i = get_uni_c(st, f)?;
+                    i = get_uni_c(st, f);
                     if is_line_end(i) {
                         break;
                     }
@@ -521,8 +412,8 @@ fn input_line_with(
                 }
             }
 
-            if is_true_eof(i) && st.input.last == st.input.first {
-                return Ok(0);
+            if i == EOF && st.input.last == st.input.first {
+                return Ok(false);
             }
             if !is_line_end(i) {
                 return Err(line_too_long());
@@ -531,7 +422,7 @@ fn input_line_with(
     }
 
     if i == i32::from(b'\r') {
-        f.skip_next_lf = 1;
+        f.pending_lf = true;
     }
 
     st.input.buffer[st.input.last] = i32::from(b' ');
@@ -547,47 +438,35 @@ fn input_line_with(
         st.input.last -= 1;
     }
 
-    Ok(1)
+    Ok(true)
 }
 
-/// The only abort of [`get_uni_c`]. Being fieldless keeps the per-character
-/// `Result` in registers on this hot path.
-pub(crate) struct InvalidInputMode;
-
-impl From<InvalidInputMode> for Abort {
-    fn from(_: InvalidInputMode) -> Self {
-        Abort::Internal("internal error; file input mode is invalid")
-    }
-}
-
-pub(crate) fn get_uni_c(
-    st: &mut EngineState,
-    f: &mut UFile,
-) -> Result<libc::c_int, InvalidInputMode> {
-    if f.saved_char != -1 {
-        let rval = f.saved_char as i32;
-        f.saved_char = -1;
-        return Ok(rval);
+/// The next character of `f` in one of the encodings the engine decodes itself.
+fn get_uni_c(st: &mut EngineState, f: &mut InputFile) -> i32 {
+    if let Some(saved) = f.saved.take() {
+        return saved;
     }
 
-    let handle = f.handle;
-    let rval = match i32::from(f.encoding_mode) {
-        UTF8 => {
-            let mut rval = input_getc(handle);
+    let Decoder::Plain(encoding) = f.decoder else {
+        unreachable!("ICU input is read as bytes");
+    };
+    match encoding {
+        Encoding::Utf8 => {
+            let mut rval = f.getc();
             if rval != EOF {
                 let extra_bytes = BYTES_FROM_UTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
                     bad_utf8_warning(st);
-                    return Ok(0xFFFD);
+                    return 0xFFFD;
                 }
                 for _ in 0..extra_bytes {
-                    let c = input_getc(handle);
+                    let c = f.getc();
                     if !(0x80..0xC0).contains(&c) {
                         if c != EOF {
-                            input_ungetc(handle, c);
+                            f.unget();
                         }
                         bad_utf8_warning(st);
-                        return Ok(0xFFFD);
+                        return 0xFFFD;
                     }
                     rval = (rval << 6) + c;
                 }
@@ -595,31 +474,32 @@ pub(crate) fn get_uni_c(
                 rval = (rval as u32).wrapping_sub(offset) as i32;
                 if !(0..=0x10ffff).contains(&rval) {
                     bad_utf8_warning(st);
-                    return Ok(0xFFFD);
+                    return 0xFFFD;
                 }
             }
             rval
         }
 
-        mode @ (UTF16BE | UTF16LE) => {
-            let unit = |first: i32| {
-                let second = input_getc(handle);
-                if mode == UTF16BE {
+        Encoding::Utf16Be | Encoding::Utf16Le => {
+            let unit = |f: &mut InputFile, first: i32| {
+                let second = f.getc();
+                if encoding == Encoding::Utf16Be {
                     (first << 8) + second
                 } else {
                     first + (second << 8)
                 }
             };
-            let mut rval = input_getc(handle);
+            let mut rval = f.getc();
             if rval != EOF {
-                rval = unit(rval);
+                rval = unit(f, rval);
                 if (0xd800..=0xdbff).contains(&rval) {
-                    let lo = unit(input_getc(handle));
+                    let first = f.getc();
+                    let lo = unit(f, first);
                     if (0xdc00..=0xdfff).contains(&lo) {
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
                         rval = 0xfffd;
-                        f.saved_char = i64::from(lo);
+                        f.saved = Some(lo);
                     }
                 } else if (0xdc00..=0xdfff).contains(&rval) {
                     rval = 0xfffd;
@@ -628,34 +508,17 @@ pub(crate) fn get_uni_c(
             rval
         }
 
-        RAW => input_getc(handle),
-
-        _ => return Err(InvalidInputMode),
-    };
-
-    Ok(rval)
+        Encoding::Raw => f.getc(),
+    }
 }
 
-/// Closes an input slot. Returns `true` on a serious internal close error, in
-/// which case the converter and the file are leaked like the old abort did.
+/// Closes an input slot. Returns `true` on a serious internal close error.
 #[must_use]
 pub fn u_close(slot: InputSlot) -> bool {
-    let InputSlot::Open(f) = slot else {
-        return false;
-    };
-
-    if f.handle == INVALID_HANDLE {
-        mem::forget(f);
-        return false;
+    match slot {
+        InputSlot::Open(f) => f.close(),
+        InputSlot::Empty | InputSlot::Terminal => false,
     }
-
-    if input_close(f.handle) {
-        mem::forget(f);
-        return true;
-    }
-
-    drop(f);
-    false
 }
 
 /// Runs `path` back through the name scanner, giving the name of the file actually opened.

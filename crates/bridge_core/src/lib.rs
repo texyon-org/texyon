@@ -868,6 +868,18 @@ impl<'a> CoreBridgeState<'a> {
         rhandle.read(buf).map_err(Error::from)
     }
 
+    /// Read up to `buf.len()` bytes of an input. Returns 0 at its end or after
+    /// reporting a failure.
+    pub fn input_read_some(&mut self, handle: InputId, buf: &mut [u8]) -> usize {
+        match self.input_read_partial(handle, buf) {
+            Ok(n) => n,
+            Err(e) => {
+                tt_warning!(self.status, "read failed"; e);
+                0
+            }
+        }
+    }
+
     /// Get one byte from an input, or `None` at its end or after reporting a failure.
     pub fn input_getc(&mut self, handle: InputId) -> Option<u8> {
         let rhandle: &mut InputHandle = self.get_input(handle);

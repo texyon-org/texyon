@@ -484,7 +484,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             pseudo_input(st)?
                         } else {
                             let slot = FileSlot::Input(st.input.cur_input.index as usize);
-                            input_slot_line(st, slot)? != 0
+                            input_slot_line(st, slot)?
                         };
                         if got_line {
                             st.input.cur_input.limit = st.input.last;

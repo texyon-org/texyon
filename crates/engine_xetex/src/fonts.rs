@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::base::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
+use crate::base::consts::{EMPTY_STRING, NULL_FONT, TOO_BIG_CHAR};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled, StrNumber};
 use crate::ffi::bridge::FileFormat;
@@ -74,7 +74,7 @@ use std::sync::Arc;
 use crate::base::codes::code_enum;
 use crate::base::scaled_math::{Divided, xn_over_d};
 use crate::base::utf8::utf16_units;
-use crate::files::io::input_close;
+use crate::files::input_file::InputFile;
 pub(crate) use crate::fonts::tfm::{
     CharInfo, CharTag, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
 };
@@ -403,10 +403,9 @@ pub(crate) fn read_font_info(
     } = name.file;
     let font = FontSpec::new(u, name, s);
     let mut name_too_long = false;
-    let mut file_opened = false;
     let mut opened_name = Vec::new();
     let mut g = NULL_FONT;
-    let mut tfm_file = INVALID_HANDLE;
+    let mut tfm_file = None;
 
     // Native fonts get the name as written, TFM lookups a form without extension and mapping.
     let path = name.file.path(&st.strings);
@@ -458,8 +457,7 @@ pub(crate) fn read_font_info(
             }
             break 'read true;
         };
-        tfm_file = file;
-        file_opened = true;
+        let file = tfm_file.insert(file);
         opened_name = found.name;
 
         let mut too_big = false;
@@ -467,7 +465,7 @@ pub(crate) fn read_font_info(
         let room = |words: i32| {
             fonts.font_ptr != fonts.font_max && fonts.fmem_ptr + words <= fonts.font_mem_size
         };
-        let parse = read_tfm(tfm_file, s, room, &mut too_big);
+        let parse = read_tfm(file, s, room, &mut too_big);
         if too_big {
             error(
                 st,
@@ -493,7 +491,7 @@ pub(crate) fn read_font_info(
     };
 
     if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
-        let reason = if file_opened {
+        let reason = if tfm_file.is_some() {
             " not loadable: Bad metric (TFM) file"
         } else if name_too_long {
             " not loadable: Metric (TFM) file name too long"
@@ -513,7 +511,8 @@ pub(crate) fn read_font_info(
         )?;
     }
 
-    if file_opened && input_close(tfm_file) {
+    let file_opened = tfm_file.is_some();
+    if tfm_file.is_some_and(InputFile::close) {
         return Err(Abort::Internal(
             "serious internal error closing the font metric file",
         ));

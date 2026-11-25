@@ -8,9 +8,7 @@ use crate::base::units::{PoolPos, StrNumber};
 use crate::build::hyphenation::norm_min;
 use crate::build::main_control::new_graf;
 use crate::ffi::clock::get_seconds_and_micros;
-use crate::files::io::{
-    AUTO, FileSlot, scan_file_name, scan_name_path, set_input_file_encoding, with_slot_file,
-};
+use crate::files::io::{AUTO, FileSlot, scan_file_name, scan_name_path, set_slot_encoding};
 use crate::fonts::ext::get_encoding_mode_and_info;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::mem::TEX_NULL;
@@ -281,12 +279,8 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                     ],
                 )?;
             } else {
-                // `\scantokens` occupies an input level without a UFile.
-                let slot = FileSlot::Input(st.input.in_open);
-                with_slot_file(st, slot, |st, f| {
-                    set_input_file_encoding(st, f, enc_mode, info)
-                })
-                .transpose()?;
+                // `\scantokens` occupies an input level without a file.
+                set_slot_encoding(st, FileSlot::Input(st.input.in_open), enc_mode, info)?;
             }
         }
 
