@@ -5,7 +5,6 @@ use std::rc::Rc;
 use super::{FontSize, LigChar};
 use crate::base::scaled_math::xn_over_d;
 use crate::base::units::Scaled;
-use crate::files::input_file::InputFile;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct LigKernIdx(u16);
@@ -351,7 +350,30 @@ pub(crate) struct Tfm {
 
 const EOF: i32 = -1;
 
-fn read_fifteen(file: &mut InputFile) -> Result<i32, TfmError> {
+/// A TFM file read into memory, read a byte at a time.
+pub(crate) struct TfmBytes<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> TfmBytes<'a> {
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
+        TfmBytes { bytes, pos: 0 }
+    }
+
+    /// The next byte, or `EOF` past the end.
+    fn getc(&mut self) -> i32 {
+        match self.bytes.get(self.pos) {
+            Some(&byte) => {
+                self.pos += 1;
+                i32::from(byte)
+            }
+            None => EOF,
+        }
+    }
+}
+
+fn read_fifteen(file: &mut TfmBytes<'_>) -> Result<i32, TfmError> {
     let x = file.getc();
     if x > 127 || x == EOF {
         return Err(TfmError::Bad);
@@ -359,7 +381,7 @@ fn read_fifteen(file: &mut InputFile) -> Result<i32, TfmError> {
     Ok(x * 256 + file.getc())
 }
 
-fn read_bytes(file: &mut InputFile) -> Result<[i32; 4], TfmError> {
+fn read_bytes(file: &mut TfmBytes<'_>) -> Result<[i32; 4], TfmError> {
     let bytes = [file.getc(), file.getc(), file.getc(), file.getc()];
     if bytes.contains(&EOF) {
         return Err(TfmError::Bad);
@@ -388,7 +410,7 @@ impl FixScale {
         }
     }
 
-    fn read(&self, file: &mut InputFile) -> Result<Scaled, TfmError> {
+    fn read(&self, file: &mut TfmBytes<'_>) -> Result<Scaled, TfmError> {
         let [a, b, c, d] = read_bytes(file)?;
         let z = self.z;
         let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / self.beta;
@@ -399,7 +421,7 @@ impl FixScale {
         }
     }
 
-    fn read_n(&self, file: &mut InputFile, n: i32) -> Result<Vec<Scaled>, TfmError> {
+    fn read_n(&self, file: &mut TfmBytes<'_>, n: i32) -> Result<Vec<Scaled>, TfmError> {
         (0..n).map(|_| self.read(file)).collect()
     }
 }
@@ -416,7 +438,7 @@ fn char16(v: i32) -> Result<u16, TfmError> {
 /// font of that many `font_info` words still fits. Sets `too_big` when a
 /// `scaled` size reached 2048pt, so the design size was kept.
 pub(crate) fn read_tfm(
-    file: &mut InputFile,
+    file: &mut TfmBytes<'_>,
     s: FontSize,
     room: impl FnOnce(i32) -> bool,
     too_big: &mut bool,

@@ -11,6 +11,7 @@ use crate::base::token::TokenList;
 use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::main_control::normal_paragraph;
 use crate::build::packaging::{MarksAction, PackSpec, vert_break, vpackage};
+use crate::env::EngineEnv;
 use crate::memory::mem::{CONTRIB_HEAD, HOLD_HEAD, MemState, PAGE_HEAD, PAGE_INS_HEAD, push_nest};
 use crate::memory::node::{
     AnyNode, GlueNode, InsNode, LinkSlot, NodePtr, PageInsNode, View, WhatsitVariant,
@@ -68,12 +69,13 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     shipout.least_page_cost = MAX_HALFWORD;
 }
 
-fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
+fn ensure_vbox(st: &mut EngineState, env: &mut EngineEnv, n: u8) -> Result<(), Abort> {
     if !fetch_box(st, Register::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
     }
     box_error(
         st,
+        env,
         n,
         "Insertions can only be added to a vbox",
         &[
@@ -114,6 +116,7 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
 
 fn place_insertion(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     tails: &mut InsertTails,
     ins: NodePtr<InsNode>,
     p: MemPtr,
@@ -148,7 +151,7 @@ fn place_insertion(
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
         st.mem[ins].ins_ptr = pruned;
         if !pruned.is_none() {
-            let tmp = vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
+            let tmp = vpackage(st, env, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = st.mem[tmp].height + st.mem[tmp].depth;
             st.mem[ins].height = size;
             tmp.free(&mut st.mem);
@@ -159,14 +162,14 @@ fn place_insertion(
     let b = fetch_box(st, Register::from(n)).or_confusion("insertion box")?;
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
-    let packed = vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
+    let packed = vpackage(st, env, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(n, Some(packed));
     Ok(wait)
 }
 
 type InsertTails = [Option<LinkSlot>; 256];
 
-fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
+fn fire_up(st: &mut EngineState, env: &mut EngineEnv, c: MemPtr) -> Result<(), Abort> {
     let best = st.shipout.best_page_break;
     let output_penalty = match best.map(|b| st.mem.classify(b)) {
         Some(Ok(AnyNode::Penalty(pen))) => {
@@ -200,6 +203,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     if !st.eqtb.box_reg(Register::of(255)).is_none() {
         box_error(
             st,
+            env,
             255,
             (Esc("box"), "255 is not void"),
             &[
@@ -220,7 +224,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             let rec = page_ins(r);
             if !st.mem[rec].best_ins_ptr.is_none() {
                 let n = st.mem[rec].box_number;
-                ensure_vbox(st, n)?;
+                ensure_vbox(st, env, n)?;
                 let b = match st.eqtb.box_reg(n) {
                     Some(b) => b,
                     None => {
@@ -243,7 +247,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         let here = p.or_confusion("fire_up")?;
         match st.mem.classify(here) {
             Ok(AnyNode::Ins(ins)) if process_inserts => {
-                let wait = place_insertion(st, &mut tails, ins, p)?;
+                let wait = place_insertion(st, env, &mut tails, ins, p)?;
                 let next = st.mem[ins].link;
                 prev_p.set_link(&mut st.mem, next);
                 st.mem[ins].link = None;
@@ -285,6 +289,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     st.eqtb.set_dimen_par(DimenPar::Vfuzz, MAX_DIMEN);
     let page = vpackage(
         st,
+        env,
         PAGE_HEAD.link(&st.mem),
         PackSpec::Exactly(st.shipout.best_size),
         st.shipout.page_max_depth,
@@ -335,15 +340,16 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             push_nest(st)?;
             st.input.cur_list.mode = Mode::vertical(true);
             st.input.cur_list.mode_line = -st.mem.line;
-            begin_token_list(st, output_routine, TokenType::Output)?;
+            begin_token_list(st, env, output_routine, TokenType::Output)?;
             st.save_stack
                 .new_save_level(GroupCode::Output, st.mem.line)?;
             normal_paragraph(st)?;
-            scan_left_brace(st)?;
+            scan_left_brace(st, env)?;
             return Ok(());
         }
         error(
             st,
+            env,
             (
                 "Output loop---",
                 st.shipout.dead_cycles,
@@ -373,7 +379,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let discards = st.scanner.disc_ptr[BoxCode::LastBox as usize];
     st.mem.flush_node_list(discards)?;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
-    ship_out(st, page)?;
+    ship_out(st, env, page)?;
     st.eqtb.set_box_reg(255, None);
     Ok(())
 }
@@ -422,7 +428,12 @@ fn scale_by_count(x: Scaled, count: i32) -> Scaled {
     }
 }
 
-fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<(), Abort> {
+fn append_insertion(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    ins: NodePtr<InsNode>,
+    p: MemPtr,
+) -> Result<(), Abort> {
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
     }
@@ -440,7 +451,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         let rec = page_ins(r);
         st.mem[rec].box_number = n;
         st.mem[rec].set_split_up(false);
-        ensure_vbox(st, n)?;
+        ensure_vbox(st, env, n)?;
         let height = match fetch_box(st, Register::from(n)) {
             Some(b) => st.mem[b].height + st.mem[b].depth,
             None => Scaled::ZERO,
@@ -458,6 +469,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         if st.mem[skip].shrink_order != GlueOrder::Normal && st.mem[skip].shrink != Scaled::ZERO {
             error(
                 st,
+                env,
                 (
                     "Infinite glue shrinkage inserted from ",
                     Esc("skip"),
@@ -509,7 +521,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         w = room;
     }
     let (q, mut best_height_plus_depth) =
-        vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
+        vert_break(st, env, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
     let height = st.mem[rec].height + best_height_plus_depth;
     st.mem[rec].height = height;
     if count != 1000 {
@@ -539,7 +551,7 @@ enum PageStep {
     Break(i32),
 }
 
-pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn build_page(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if CONTRIB_HEAD.link(&st.mem).is_none() || st.shipout.output_active {
         return Ok(());
     }
@@ -621,7 +633,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             AnyNode::Penalty(pen) => PageStep::Break(st.mem[pen].penalty),
             AnyNode::Mark(_) => PageStep::Contribute,
             AnyNode::Ins(ins) => {
-                append_insertion(st, ins, p)?;
+                append_insertion(st, env, ins, p)?;
                 PageStep::Contribute
             }
             _ => return Err(Abort::Confusion("page")),
@@ -656,7 +668,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                         }
                     }
                     if c == AWFUL_BAD || pi <= EJECT_PENALTY {
-                        fire_up(st, p)?;
+                        fire_up(st, env, p)?;
                         if st.shipout.output_active {
                             return Ok(());
                         }
@@ -676,7 +688,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             PageStep::UpdateHeights => {
                 let width = match node {
                     AnyNode::Kern(kern) => st.mem[kern].width,
-                    AnyNode::Glue(glue) => page_glue_width(st, glue)?,
+                    AnyNode::Glue(glue) => page_glue_width(st, env, glue)?,
                     _ => unreachable!("only glue and kern update the page heights"),
                 };
                 st.shipout.page_so_far[PAGE_TOTAL] += st.shipout.page_so_far[PAGE_DEPTH] + width;
@@ -708,7 +720,11 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn page_glue_width(st: &mut EngineState, glue: NodePtr<GlueNode>) -> Result<Scaled, Abort> {
+fn page_glue_width(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    glue: NodePtr<GlueNode>,
+) -> Result<Scaled, Abort> {
     let spec = st.mem[glue].glue_ptr;
     let order = st.mem[spec].stretch_order.index();
     st.shipout.page_so_far[2 + order] += st.mem[spec].stretch;
@@ -718,6 +734,7 @@ fn page_glue_width(st: &mut EngineState, glue: NodePtr<GlueNode>) -> Result<Scal
     }
     error(
         st,
+        env,
         "Infinite glue shrinkage found on current page",
         &[
             "The page about to be output contains some infinitely",

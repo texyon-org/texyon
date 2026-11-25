@@ -2,6 +2,7 @@
 
 use crate::base::params::{GluePar, IntPar};
 use crate::base::units::{FontId, StrNumber};
+use crate::env::EngineEnv;
 use crate::ffi::teckit_icu::{IcuBreaks, LinebreakHandle};
 use crate::memory::mem::ZERO_GLUE;
 use crate::print::errors::Abort;
@@ -39,6 +40,7 @@ impl TextBreaks<'_> {
 
 fn open_linebreak_iterator(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     locale: StrNumber,
     name: &[u8],
 ) -> Result<LinebreakHandle, Abort> {
@@ -49,13 +51,13 @@ fn open_linebreak_iterator(
         let (mut iter, status) = LinebreakHandle::open(name);
         if status > 0 {
             begin_diagnostic(st);
-            print_nl(st, b'E');
-            print(st, "rror ");
-            print_int(st, status);
-            print(st, " creating linebreak iterator for locale `");
-            print(st, name);
-            print(st, "'; trying default locale `en_us'.");
-            end_diagnostic(st, true);
+            print_nl(st, env, b'E');
+            print(st, env, "rror ");
+            print_int(st, env, status);
+            print(st, env, " creating linebreak iterator for locale `");
+            print(st, env, name);
+            print(st, env, "'; trying default locale `en_us'.");
+            end_diagnostic(st, env, true);
             drop(iter);
             iter = LinebreakHandle::open(b"en_us").0;
         }
@@ -70,6 +72,7 @@ fn open_linebreak_iterator(
 
 pub(crate) fn do_locale_linebreaks(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     main_f: FontId,
     s: i32,
     len: i32,
@@ -98,7 +101,7 @@ pub(crate) fn do_locale_linebreaks(
             None => TextBreaks::Graphite(graphite),
         },
         None => {
-            let fresh = open_linebreak_iterator(st, locale, &locale_name)?;
+            let fresh = open_linebreak_iterator(st, env, locale, &locale_name)?;
             TextBreaks::Icu(iter.insert(fresh).breaks(&text))
         }
     };

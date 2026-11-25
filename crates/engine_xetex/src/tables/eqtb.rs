@@ -1083,6 +1083,7 @@ impl EqtbState {
 mod tests {
     use super::*;
     use crate::base::consts::LEVEL_ZERO;
+    use crate::env::test_env;
     use crate::tables::save::unsave;
 
     fn state() -> EngineState {
@@ -1102,6 +1103,7 @@ mod tests {
 
     #[test]
     fn a_group_restores_a_local_value_but_keeps_a_global_one() {
+        let env = &mut test_env();
         let mut st = state();
         let (a, b) = (
             IntLoc::count(Register::of(1)),
@@ -1114,7 +1116,7 @@ mod tests {
         define(&mut st, true, b, 8);
         define(&mut st, false, b, 9);
         assert_eq!((st.eqtb.ints.get(a), st.eqtb.ints.level(a)), (7, 2));
-        unsave(&mut st).unwrap();
+        unsave(&mut st, env).unwrap();
         assert_eq!((st.eqtb.ints.get(a), st.eqtb.ints.level(a)), (5, LEVEL_ONE));
         assert_eq!((st.eqtb.ints.get(b), st.eqtb.ints.level(b)), (8, LEVEL_ONE));
         assert_ne!(st.eqtb.ints.level(a), LEVEL_ZERO);

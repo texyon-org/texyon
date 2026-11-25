@@ -14,6 +14,7 @@ use crate::base::params::IntPar;
 use crate::base::scaled_math::{Overflowing, add_or_sub, fract, mult_and_add, quotient, xn_over_d};
 use crate::base::token::{Token, TokenKind};
 use crate::base::units::{GlueOrder, MemIdx, RawPtr, Scaled};
+use crate::env::EngineEnv;
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::ZERO_GLUE;
@@ -53,40 +54,44 @@ const EXPR_SCALE: i16 = 5;
 
 pub(super) fn bad_int_error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     err: &str,
     value: i32,
     help1: &'static str,
     help0: &'static str,
 ) -> Result<(), Abort> {
-    error(st, (err, " (", value, ")"), &[help1, help0])
+    error(st, env, (err, " (", value, ")"), &[help1, help0])
 }
 
 fn int_range_error(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     err: &str,
     value: i32,
     help1: &'static str,
 ) -> Result<i32, Abort> {
-    bad_int_error(st, err, value, help1, "I changed this one to zero.")?;
+    bad_int_error(st, env, err, value, help1, "I changed this one to zero.")?;
     Ok(0)
 }
 
 fn scan_int_up_to(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     max: i32,
     err: &str,
     help: &'static str,
 ) -> Result<i32, Abort> {
-    let n = scan_int(st)?;
+    let n = scan_int(st, env)?;
     if n < 0 || n > max {
-        return int_range_error(st, err, n, help);
+        return int_range_error(st, env, err, n, help);
     }
     Ok(n)
 }
 
-pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_char_class(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         CHAR_CLASS_LIMIT,
         "Bad character class",
         "A character class must be between 0 and 4096.",
@@ -95,56 +100,68 @@ pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<i32, Abort> {
 
 /// A class between two characters. WEB also lets 4096 through, which indexes past the
 /// interchartoks tree, so this keeps to the 0..4095 its help text promises.
-pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_char_class_not_ignored(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         CHAR_CLASS_LIMIT - 1,
         "Bad character class",
         "A class for inter-character transitions must be between 0 and 4095.",
     )
 }
 
-pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_eight_bit_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         255,
         "Bad register code",
         "A register code or char class must be between 0 and 255.",
     )
 }
 
-pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_math_class_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         7,
         "Bad math class",
         "Since I expected to read a number between 0 and 7,",
     )
 }
 
-pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_math_fam_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         NUMBER_MATH_FAMILIES - 1,
         "Bad math family",
         "Since I expected to read a number between 0 and 255,",
     )
 }
 
-pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_four_bit_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         15,
         "Bad number",
         "Since I expected to read a number between 0 and 15,",
     )
 }
 
-pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<i32, Abort> {
-    let n = scan_int(st)?;
+pub(crate) fn scan_four_bit_int_or_18(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<i32, Abort> {
+    let n = scan_int(st, env)?;
     if n < 0 || (n > 15 && n != 18) {
         return int_range_error(
             st,
+            env,
             "Bad number",
             n,
             "Since I expected to read a number between 0 and 15,",
@@ -153,49 +170,60 @@ pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<i32, Abort
     Ok(n)
 }
 
-pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_fifteen_bit_int(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         32767,
         "Bad mathchar",
         "A mathchar number must be between 0 and 32767.",
     )
 }
 
-pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_char_num(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         BIGGEST_CHAR,
         "Bad character code",
         "A character number must be between 0 and 65535.",
     )
 }
 
-pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_usv_num(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         BIGGEST_USV,
         "Bad character code",
         "A Unicode scalar value must be between 0 and \"10FFFF.",
     )
 }
 
-pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_delimiter_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
+        env,
         0x7FF_FFFF,
         "Bad delimiter code",
         "A numeric delimiter code must be between 0 and 2^{27}-1.",
     )
 }
 
-pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<Register, Abort> {
-    let n = scan_int(st)?;
+pub(crate) fn scan_register_num(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<Register, Abort> {
+    let n = scan_int(st, env)?;
     match Register::new(n).filter(|_| n <= st.scanner.max_reg_num) {
         Some(r) => Ok(r),
         None => {
             int_range_error(
                 st,
+                env,
                 "Bad register code",
                 n,
                 "A register number must be between 0 and 32767.",
@@ -205,12 +233,16 @@ pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<Register, Abort>
     }
 }
 
-pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abort> {
-    let n = scan_int(st)?;
+pub(crate) fn scan_xetex_math_char_int(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<i32, Abort> {
+    let n = scan_int(st, env)?;
     if math_char(n) == ACTIVE_MATH_CHAR {
         if n != ACTIVE_MATH_CHAR {
             bad_int_error(
                 st,
+                env,
                 "Bad active XeTeX math code",
                 n,
                 "Since I ignore class and family for active math chars,",
@@ -221,6 +253,7 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abor
     } else if math_char(n) > BIGGEST_USV {
         return int_range_error(
             st,
+            env,
             "Bad XeTeX math character code",
             n,
             "Since I expected a character number between 0 and \"10FFFF,",
@@ -229,10 +262,10 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abor
     Ok(n)
 }
 
-fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
+fn scan_signs(st: &mut EngineState, env: &mut EngineEnv) -> Result<bool, Abort> {
     let mut negative = false;
     loop {
-        get_x_non_blank(st)?;
+        get_x_non_blank(st, env)?;
         if st.scanner.cur_tok == MINUS_TOKEN {
             negative = !negative;
             st.scanner.cur_tok = PLUS_TOKEN;
@@ -243,16 +276,16 @@ fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
     }
 }
 
-fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
-    get_x_token(st)?;
+fn scan_optional_space(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_x_token(st, env)?;
     if st.scanner.cur.cmd() != Cmd::Spacer {
         back_input(st)?;
     }
     Ok(())
 }
 
-pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
-    get_token(st)?;
+pub(super) fn get_primitive_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_token(st, env)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
         st.scanner.cur = st.eqtb.meaning(CsId::primitive(p));
         st.scanner.cur_cs = Some(CsId::primitive(p));
@@ -265,19 +298,19 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
-    Ok(scan_int_decimal(st)?.0)
+pub(crate) fn scan_int(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
+    Ok(scan_int_decimal(st, env)?.0)
 }
 
-fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
+fn scan_int_decimal(st: &mut EngineState, env: &mut EngineEnv) -> Result<(i32, bool), Abort> {
     let mut ok_so_far = true;
     let mut v: i32;
     let mut decimal = false;
-    let negative = scan_signs(st)?;
+    let negative = scan_signs(st, env)?;
 
     loop {
         if st.scanner.cur_tok == ALPHA_TOKEN {
-            get_token(st)?;
+            get_token(st, env)?;
             match st.scanner.cur_tok.kind() {
                 TokenKind::Cs(cs) => {
                     v = match cs.kind() {
@@ -299,6 +332,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                 v = i32::from(b'0');
                 back_error(
                     st,
+                    env,
                     "Improper alphabetic constant",
                     &[
                         "A one-character control sequence belongs after a ` mark.",
@@ -306,24 +340,24 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                     ],
                 )?;
             } else {
-                scan_optional_space(st)?;
+                scan_optional_space(st, env)?;
             }
         } else if st.scanner.cur_tok == FROZEN_PRIM_TOKEN {
-            get_primitive_token(st)?;
+            get_primitive_token(st, env)?;
             continue;
         } else if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
             && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
         {
-            v = match scan_something_internal(st, ValueLevel::Int, false)? {
+            v = match scan_something_internal(st, env, ValueLevel::Int, false)? {
                 CurVal::Int(n) => n,
                 _ => return Err(Abort::Confusion("scan_int")),
             };
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
-                get_x_token(st)?;
+                get_x_token(st, env)?;
                 (8, 0x1000_0000)
             } else if st.scanner.cur_tok == HEX_TOKEN {
-                get_x_token(st)?;
+                get_x_token(st, env)?;
                 (16, 0x0800_0000)
             } else {
                 (10, 0x0CCC_CCCC)
@@ -347,6 +381,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                     if ok_so_far {
                         error(
                             st,
+                            env,
                             "Number too big",
                             &[
                                 "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
@@ -359,11 +394,12 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                 } else {
                     v = v * radix + d;
                 }
-                get_x_token(st)?;
+                get_x_token(st, env)?;
             }
             if vacuous {
                 back_error(
                     st,
+                    env,
                     "Missing number, treated as zero",
                     &[
                         "A number should have been here; I inserted `0'.",
@@ -384,18 +420,26 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     Ok((v, decimal))
 }
 
-pub(crate) fn scan_dimen(st: &mut EngineState, mu: bool) -> Result<Scaled, Abort> {
-    Ok(scan_dimen_from(st, mu, false, None, true)?.0)
+pub(crate) fn scan_dimen(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    mu: bool,
+) -> Result<Scaled, Abort> {
+    Ok(scan_dimen_from(st, env, mu, false, None, true)?.0)
 }
 
 /// Scans a number with an optional fraction and no unit, as XeTeX's
 /// `xetex_scan_dimen` does for an angle.
-pub(crate) fn scan_decimal(st: &mut EngineState) -> Result<Scaled, Abort> {
-    Ok(scan_dimen_from(st, false, false, None, false)?.0)
+pub(crate) fn scan_decimal(st: &mut EngineState, env: &mut EngineEnv) -> Result<Scaled, Abort> {
+    Ok(scan_dimen_from(st, env, false, false, None, false)?.0)
 }
 
-fn scan_stretch(st: &mut EngineState, mu: bool) -> Result<(Scaled, GlueOrder), Abort> {
-    scan_dimen_from(st, mu, true, None, true)
+fn scan_stretch(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    mu: bool,
+) -> Result<(Scaled, GlueOrder), Abort> {
+    scan_dimen_from(st, env, mu, true, None, true)
 }
 
 pub(super) fn glue_spec(p: i32) -> GlueSpecId {
@@ -429,6 +473,7 @@ fn attach_unit(integer: i32, fraction: i32, v: Scaled) -> Overflowing<Scaled> {
 /// `shortcut` is an integer already scanned, which then only needs units.
 fn scan_dimen_from(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     mu: bool,
     inf: bool,
     shortcut: Option<i32>,
@@ -445,13 +490,13 @@ fn scan_dimen_from(
         if let Some(n) = shortcut {
             v = n;
         } else {
-            negative = scan_signs(st)?;
+            negative = scan_signs(st, env)?;
 
             if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
                 && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
             {
                 if mu {
-                    let val = scan_something_internal(st, ValueLevel::Mu, false)?;
+                    let val = scan_something_internal(st, env, ValueLevel::Mu, false)?;
                     v = match val.glue() {
                         Some(spec) => release_to_width(st, spec),
                         None => val.scaled()?,
@@ -461,12 +506,12 @@ fn scan_dimen_from(
                         CurVal::Int(_) => {}
                         CurVal::Mu(_) => break 'attach_sign,
                         _ => {
-                            mu_error(st)?;
+                            mu_error(st, env)?;
                             break 'attach_sign;
                         }
                     }
                 } else {
-                    let val = scan_something_internal(st, ValueLevel::Dimen, false)?;
+                    let val = scan_something_internal(st, env, ValueLevel::Dimen, false)?;
                     v = val.scaled()?.raw();
                     if let CurVal::Dimen(_) = val {
                         break 'attach_sign;
@@ -479,7 +524,7 @@ fn scan_dimen_from(
                 }
                 let decimal;
                 if st.scanner.cur_tok != POINT_TOKEN {
-                    (v, decimal) = scan_int_decimal(st)?;
+                    (v, decimal) = scan_int_decimal(st, env)?;
                 } else {
                     (v, decimal) = (0, true);
                 }
@@ -491,9 +536,9 @@ fn scan_dimen_from(
                     // Up to 17 digits are kept, most recent first, in a temporary list.
                     let mut k: usize = 0;
                     let mut dig = [0u8; 17];
-                    get_token(st)?;
+                    get_token(st, env)?;
                     loop {
-                        get_x_token(st)?;
+                        get_x_token(st, env)?;
                         let Some(d) = st.scanner.cur_tok.other_digit() else {
                             break;
                         };
@@ -517,14 +562,15 @@ fn scan_dimen_from(
 
         if requires_units {
             let apply_fraction = 'units: {
-                if inf && scan_keyword(st, "fil")? {
+                if inf && scan_keyword(st, env, "fil")? {
                     order = GlueOrder::Fil;
-                    while scan_keyword(st, "l")? {
+                    while scan_keyword(st, env, "l")? {
                         match order.next() {
                             Some(next) => order = next,
                             None => {
                                 error(
                                     st,
+                                    env,
                                     "Illegal unit of measure (replaced by filll)",
                                     &["I dddon't go any higher than filll."],
                                 )?;
@@ -535,23 +581,23 @@ fn scan_dimen_from(
                 }
 
                 let integer = v;
-                get_x_non_blank(st)?;
+                get_x_non_blank(st, env)?;
 
                 if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
                     && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
                 {
                     let unit = if mu {
-                        let val = scan_something_internal(st, ValueLevel::Mu, false)?;
+                        let val = scan_something_internal(st, env, ValueLevel::Mu, false)?;
                         let unit = match val.glue() {
                             Some(spec) => release_to_width(st, spec),
                             None => val.scaled()?,
                         };
                         if !matches!(val, CurVal::Mu(_)) {
-                            mu_error(st)?;
+                            mu_error(st, env)?;
                         }
                         unit
                     } else {
-                        scan_something_internal(st, ValueLevel::Dimen, false)?.scaled()?
+                        scan_something_internal(st, env, ValueLevel::Dimen, false)?.scaled()?
                     };
                     v = attach_unit(integer, f, unit).track(&mut overflowed).raw();
                     break 'attach_sign;
@@ -560,9 +606,9 @@ fn scan_dimen_from(
                 back_input(st)?;
 
                 if !mu {
-                    let font_param = if scan_keyword(st, "em")? {
+                    let font_param = if scan_keyword(st, env, "em")? {
                         Some(QUAD_CODE)
-                    } else if scan_keyword(st, "ex")? {
+                    } else if scan_keyword(st, env, "ex")? {
                         Some(X_HEIGHT_CODE)
                     } else {
                         None
@@ -570,18 +616,19 @@ fn scan_dimen_from(
                     if let Some(code) = font_param {
                         let font = st.eqtb.cur_font();
                         let unit = st.fonts.param(font, code);
-                        scan_optional_space(st)?;
+                        scan_optional_space(st, env)?;
                         v = attach_unit(integer, f, unit).track(&mut overflowed).raw();
                         break 'attach_sign;
                     }
                 }
 
                 if mu {
-                    if scan_keyword(st, "mu")? {
+                    if scan_keyword(st, env, "mu")? {
                         break 'units true;
                     } else {
                         error(
                             st,
+                            env,
                             "Illegal unit of measure (mu inserted)",
                             &[
                                 "The unit of measurement in math glue must be mu.",
@@ -594,37 +641,38 @@ fn scan_dimen_from(
                     }
                 }
 
-                if scan_keyword(st, "true")? {
-                    prepare_mag(st)?;
+                if scan_keyword(st, env, "true")? {
+                    prepare_mag(st, env)?;
                     let mag = st.eqtb.int_par(IntPar::Mag);
                     if mag != 1000 {
                         overflowed |= scale_dimen(&mut v, &mut f, 1000, mag);
                     }
                 }
 
-                if scan_keyword(st, "pt")? {
+                if scan_keyword(st, env, "pt")? {
                     break 'units true;
                 }
 
-                let (num, denom) = if scan_keyword(st, "in")? {
+                let (num, denom) = if scan_keyword(st, env, "in")? {
                     (7227_i32, 100_i32)
-                } else if scan_keyword(st, "pc")? {
+                } else if scan_keyword(st, env, "pc")? {
                     (12, 1)
-                } else if scan_keyword(st, "cm")? {
+                } else if scan_keyword(st, env, "cm")? {
                     (7227, 254)
-                } else if scan_keyword(st, "mm")? {
+                } else if scan_keyword(st, env, "mm")? {
                     (7227, 2540)
-                } else if scan_keyword(st, "bp")? {
+                } else if scan_keyword(st, env, "bp")? {
                     (7227, 7200)
-                } else if scan_keyword(st, "dd")? {
+                } else if scan_keyword(st, env, "dd")? {
                     (1238, 1157)
-                } else if scan_keyword(st, "cc")? {
+                } else if scan_keyword(st, env, "cc")? {
                     (14856, 1157)
-                } else if scan_keyword(st, "sp")? {
+                } else if scan_keyword(st, env, "sp")? {
                     break 'units false;
                 } else {
                     error(
                         st,
+                        env,
                         "Illegal unit of measure (pt inserted)",
                         &[
                             "Dimensions can be in units of em, ex, in, pt, pc,",
@@ -644,7 +692,7 @@ fn scan_dimen_from(
             if apply_fraction {
                 overflowed |= attach_fraction(&mut v, f);
             }
-            scan_optional_space(st)?;
+            scan_optional_space(st, env)?;
         } else {
             overflowed |= attach_fraction(&mut v, f);
         }
@@ -653,6 +701,7 @@ fn scan_dimen_from(
     if overflowed || v.wrapping_abs() >= 0x4000_0000 {
         error(
             st,
+            env,
             "Dimension too large",
             &[
                 "I can't work with sizes bigger than about 19 feet.",
@@ -676,55 +725,62 @@ fn attach_fraction(v: &mut i32, f: i32) -> bool {
     false
 }
 
-pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<GlueSpecId, Abort> {
+pub(crate) fn scan_glue(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    level: ValueLevel,
+) -> Result<GlueSpecId, Abort> {
     let mu = level == ValueLevel::Mu;
-    let negative = scan_signs(st)?;
+    let negative = scan_signs(st, env)?;
 
     let width =
         if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL {
-            let val = scan_something_internal(st, level, negative)?;
+            let val = scan_something_internal(st, env, level, negative)?;
             if let Some(spec) = val.glue() {
                 if val.level() != level {
-                    mu_error(st)?;
+                    mu_error(st, env)?;
                 }
                 return Ok(spec);
             }
             match val {
-                CurVal::Int(n) => scan_dimen_from(st, mu, false, Some(n), true)?.0,
+                CurVal::Int(n) => scan_dimen_from(st, env, mu, false, Some(n), true)?.0,
                 _ => {
                     if level == ValueLevel::Mu {
-                        mu_error(st)?;
+                        mu_error(st, env)?;
                     }
                     val.scaled()?
                 }
             }
         } else {
             back_input(st)?;
-            let d = scan_dimen(st, mu)?;
+            let d = scan_dimen(st, env, mu)?;
             if negative { -d } else { d }
         };
 
     let gs = st.mem.new_spec(ZERO_GLUE)?;
     st.mem[gs].width = width;
 
-    if scan_keyword(st, "plus")? {
-        let (stretch, order) = scan_stretch(st, mu)?;
+    if scan_keyword(st, env, "plus")? {
+        let (stretch, order) = scan_stretch(st, env, mu)?;
         st.mem[gs].stretch = stretch;
         st.mem[gs].stretch_order = order.into();
     }
-    if scan_keyword(st, "minus")? {
-        let (shrink, order) = scan_stretch(st, mu)?;
+    if scan_keyword(st, env, "minus")? {
+        let (shrink, order) = scan_stretch(st, env, mu)?;
         st.mem[gs].shrink = shrink;
         st.mem[gs].shrink_order = order.into();
     }
 
     Ok(gs)
 }
-pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
-    scan_glue(st, ValueLevel::Glue)
+pub(super) fn scan_normal_glue(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<GlueSpecId, Abort> {
+    scan_glue(st, env, ValueLevel::Glue)
 }
-pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
-    scan_glue(st, ValueLevel::Mu)
+pub(super) fn scan_mu_glue(st: &mut EngineState, env: &mut EngineEnv) -> Result<GlueSpecId, Abort> {
+    scan_glue(st, env, ValueLevel::Mu)
 }
 pub(super) fn map_glue(
     st: &mut EngineState,
@@ -773,7 +829,11 @@ fn add_glue(st: &mut EngineState, e: GlueSpecId, t: GlueSpecId, sub: bool, overf
     normalize_glue_orders(st, e);
 }
 
-pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVal, Abort> {
+pub(super) fn scan_expr(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    mut l: ValueLevel,
+) -> Result<CurVal, Abort> {
     let mut b = false;
     let mut stack: Vec<ExprLevel> = Vec::new();
 
@@ -805,7 +865,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
         loop {
             if scan_factor {
                 let o = if s == EXPR_NONE { l } else { ValueLevel::Int };
-                get_x_non_blank(st)?;
+                get_x_non_blank(st, env)?;
                 if st.scanner.cur_tok == Token::other(b'(') {
                     stack.push(ExprLevel { l, s, r, e, t, n });
                     l = o;
@@ -813,15 +873,15 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 }
                 back_input(st)?;
                 f = match o {
-                    ValueLevel::Int => scan_int(st)?,
-                    ValueLevel::Dimen => scan_dimen(st, false)?.raw(),
-                    ValueLevel::Glue => scan_normal_glue(st)?.raw(),
-                    _ => scan_mu_glue(st)?.raw(),
+                    ValueLevel::Int => scan_int(st, env)?,
+                    ValueLevel::Dimen => scan_dimen(st, env, false)?.raw(),
+                    ValueLevel::Glue => scan_normal_glue(st, env)?.raw(),
+                    _ => scan_mu_glue(st, env)?.raw(),
                 };
             }
             scan_factor = true;
 
-            get_x_non_blank(st)?;
+            get_x_non_blank(st, env)?;
             let tok = st.scanner.cur_tok;
             let mut o = if tok == Token::other(b'+') {
                 EXPR_ADD
@@ -842,6 +902,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 } else if st.scanner.cur_tok != Token::other(b')') {
                     back_error(
                         st,
+                        env,
                         "Missing ) inserted for expression",
                         &["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."],
                     )?;
@@ -953,6 +1014,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
     if b {
         error(
             st,
+            env,
             "Arithmetic overflow",
             &[
                 "I can't evaluate this expression,",

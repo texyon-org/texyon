@@ -21,6 +21,7 @@ use crate::build::linebreak::line_break;
 use crate::build::math::{build_choices, fin_mlist};
 use crate::build::packaging::{PackSpec, hpack, vpackage};
 use crate::build::pagebuilder::build_page;
+use crate::env::EngineEnv;
 use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
     new_native_character,
@@ -57,14 +58,14 @@ pub(crate) fn push_math(st: &mut EngineState, c: GroupCode) -> Result<(), Abort>
     Ok(())
 }
 
-pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn end_graf(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if !st.input.cur_list.mode.is_paragraph() {
         return Ok(());
     }
     if st.input.cur_list.head == st.input.cur_list.tail {
         st.mem.pop_nest(&mut st.input)?;
     } else {
-        line_break(st, false)?;
+        line_break(st, env, false)?;
     }
     let lr_save = st.input.cur_list.e_tex_aux;
     if !lr_save.is_none() {
@@ -76,12 +77,12 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
-    let n = scan_int(st)?;
+pub(super) fn append_penalty(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    let n = scan_int(st, env)?;
     let p = st.mem.new_penalty(n)?;
     st.input.cur_list.tail_append(&mut st.mem, p);
     if st.input.cur_list.mode.name() == ModeName::Vertical {
-        build_page(st)?;
+        build_page(st, env)?;
     }
     Ok(())
 }
@@ -104,8 +105,8 @@ pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
-    if !privileged(st)? {
+pub(super) fn its_all_over(st: &mut EngineState, env: &mut EngineEnv) -> Result<bool, Abort> {
+    if !privileged(st, env)? {
         return Ok(false);
     }
     if st.shipout.page_tail == Some(PAGE_HEAD)
@@ -122,7 +123,7 @@ pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     st.input.cur_list.tail_append(&mut st.mem, g);
     let p = st.mem.new_penalty(NULL_FLAG)?;
     st.input.cur_list.tail_append(&mut st.mem, p);
-    build_page(st)?;
+    build_page(st, env)?;
     Ok(false)
 }
 
@@ -187,15 +188,16 @@ pub(super) fn insert_par_token_before(
     Ok(true)
 }
 
-pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn head_for_vmode(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if !st.input.cur_list.mode.is_inner() {
         return back_input_after_par_token(st);
     }
     if st.scanner.cur.cmd() != Cmd::Hrule {
-        return off_save(st);
+        return off_save(st, env);
     }
     error(
         st,
+        env,
         (
             "You can't use `",
             Esc("hrule"),
@@ -208,14 +210,18 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn begin_insert_or_adjust(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let n = if st.scanner.cur.cmd() == Cmd::Vadjust {
         255
     } else {
-        match scan_eight_bit_int(st)? {
+        match scan_eight_bit_int(st, env)? {
             255 => {
                 error(
                     st,
+                    env,
                     ("You can't ", Esc("insert"), 255),
                     &[r"I'm changing to \insert0; box 255 is special."],
                 )?;
@@ -224,11 +230,11 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
             n => n,
         }
     };
-    let pre = st.scanner.cur.cmd() == Cmd::Vadjust && scan_keyword(st, "pre")?;
+    let pre = st.scanner.cur.cmd() == Cmd::Vadjust && scan_keyword(st, env, "pre")?;
     st.save_stack.push_saved(Saved::Insert { n, pre });
     st.save_stack
         .new_save_level(GroupCode::Insert, st.mem.line)?;
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
     normal_paragraph(st)?;
     push_nest(st)?;
     st.input.cur_list.mode = Mode::vertical(true);
@@ -289,7 +295,11 @@ pub(crate) fn start_paragraph_language(st: &mut EngineState) -> Result<(), Abort
     Ok(())
 }
 
-pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
+pub(crate) fn new_graf(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    indented: bool,
+) -> Result<(), Abort> {
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode.name() == ModeName::Vertical
         || st.input.cur_list.head != st.input.cur_list.tail
@@ -308,12 +318,12 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
         st.mem[b].width = st.eqtb.dimen_par(DimenPar::ParIndent);
         if st.shipout.insert_src_special_every_par {
-            insert_src_special(st)?;
+            insert_src_special(st, env)?;
         }
     }
-    begin_every(st, TokPar::EveryPar, TokenType::EveryPar)?;
+    begin_every(st, env, TokPar::EveryPar, TokenType::EveryPar)?;
     if st.input.nest.len() == 1 {
-        build_page(st)?;
+        build_page(st, env)?;
     }
     Ok(())
 }
@@ -341,22 +351,23 @@ impl MemAddr for NewChar {
 
 pub(crate) fn new_character(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     f: FontId,
     c: u16,
 ) -> Result<Option<NewChar>, Abort> {
     if st.fonts.is_native_font(f) {
-        return new_native_character(st, f, u32::from(c)).map(|w| Some(NewChar::Native(w)));
+        return new_native_character(st, env, f, u32::from(c)).map(|w| Some(NewChar::Native(w)));
     }
     let ec = st.fonts.effective_char(f, c) as u16;
     if st.fonts.char_exists(f, i32::from(ec)) {
         let p = st.mem.new_char(f, c)?;
         return Ok(Some(NewChar::Char(p)));
     }
-    char_warning(st, f, i32::from(c))?;
+    char_warning(st, env, f, i32::from(c))?;
     Ok(None)
 }
 
-pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn handle_right_brace(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if let Some(context) = ParTokenContext::of_group(st.save_stack.cur_group)
         && insert_par_token_before(st, context)?
     {
@@ -364,10 +375,11 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     }
     let group = st.save_stack.cur_group;
     match group {
-        GroupCode::Simple => unsave(st)?,
+        GroupCode::Simple => unsave(st, env)?,
         GroupCode::BottomLevel => {
             error(
                 st,
+                env,
                 "Too many }'s",
                 &[
                     "You've closed more groups than you opened.",
@@ -376,29 +388,29 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             )?;
         }
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
-            extra_right_brace(st)?;
+            extra_right_brace(st, env)?;
         }
-        GroupCode::Hbox | GroupCode::AdjustedHbox => package(st, group)?,
+        GroupCode::Hbox | GroupCode::AdjustedHbox => package(st, env, group)?,
         GroupCode::Vbox => {
-            end_graf(st)?;
-            package(st, group)?;
+            end_graf(st, env)?;
+            package(st, env, group)?;
         }
         GroupCode::Vtop => {
-            end_graf(st)?;
-            package(st, group)?;
+            end_graf(st, env)?;
+            package(st, env, group)?;
         }
         GroupCode::Insert => {
-            end_graf(st)?;
+            end_graf(st, env)?;
             let split_top_skip = st.eqtb.glue_par(GluePar::SplitTopSkip);
             st.mem.add_glue_ref(split_top_skip);
             let d = st.eqtb.dimen_par(DimenPar::SplitMaxDepth);
             let f = st.eqtb.int_par(IntPar::FloatingPenalty);
-            unsave(st)?;
+            unsave(st, env)?;
             let Some(Saved::Insert { n, pre }) = st.save_stack.pop_saved() else {
                 return Err(Abort::Confusion("insert"));
             };
             let head = st.input.cur_list.head.link(&st.mem);
-            let p = vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
+            let p = vpackage(st, env, head, PackSpec::NATURAL, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
@@ -427,7 +439,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             }
             p.free(&mut st.mem);
             if st.input.nest.is_empty() {
-                build_page(st)?;
+                build_page(st, env)?;
             }
         }
         GroupCode::Output => {
@@ -443,6 +455,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             {
                 error(
                     st,
+                    env,
                     "Unbalanced output routine",
                     &[
                         "Your sneaky output routine has problematic {'s and/or }'s.",
@@ -450,7 +463,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     ],
                 )?;
                 loop {
-                    get_token(st)?;
+                    get_token(st, env)?;
                     if st.input.cur_input.token_loc().is_end() {
                         break;
                     }
@@ -459,14 +472,15 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.shipout.output_can_end = true;
             end_token_list(st)?;
             st.shipout.output_can_end = false;
-            end_graf(st)?;
-            unsave(st)?;
+            end_graf(st, env)?;
+            unsave(st, env)?;
             st.shipout.output_active = false;
             st.shipout.insert_penalties = 0;
 
             if !st.eqtb.box_reg(Register::of(255)).is_none() {
                 box_error(
                     st,
+                    env,
                     255,
                     ("Output routine didn't use all of ", Esc("box"), 255),
                     &[
@@ -500,29 +514,30 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.flush_node_list(last_box)?;
             st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
             st.mem.pop_nest(&mut st.input)?;
-            build_page(st)?;
+            build_page(st, env)?;
         }
-        GroupCode::Disc => build_discretionary(st)?,
+        GroupCode::Disc => build_discretionary(st, env)?,
         GroupCode::Align => {
             back_input(st)?;
             st.scanner.cur_tok = Token::from_cs(Frozen::Cr.cs());
             ins_error(
                 st,
+                env,
                 ("Missing ", Esc("cr"), " inserted"),
                 &["I'm guessing that you meant to end an alignment here."],
             )?;
         }
         GroupCode::NoAlign => {
-            end_graf(st)?;
-            unsave(st)?;
-            align_peek(st)?;
+            end_graf(st, env)?;
+            unsave(st, env)?;
+            align_peek(st, env)?;
         }
         GroupCode::Vcenter => {
-            end_graf(st)?;
-            unsave(st)?;
+            end_graf(st, env)?;
+            unsave(st, env)?;
             let spec = st.save_stack.pop_spec()?;
             let head = st.input.cur_list.head.link(&st.mem);
-            let p = vpackage(st, head, spec, MAX_DIMEN)?;
+            let p = vpackage(st, env, head, spec, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad);
@@ -531,9 +546,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             node.nucleus.math_type = SUB_BOX;
             st.mem[noad].nucleus.set_info(p.ptr());
         }
-        GroupCode::MathChoice => build_choices(st)?,
+        GroupCode::MathChoice => build_choices(st, env)?,
         GroupCode::Math => {
-            unsave(st)?;
+            unsave(st, env)?;
             let Some(Saved::MathGroup(save_loc)) = st.save_stack.pop_saved() else {
                 return Err(Abort::Confusion("math group"));
             };
@@ -575,14 +590,18 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<GlueNode>, Abort> {
+pub(super) fn append_glue(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    s: SkipCode,
+) -> Result<NodePtr<GlueNode>, Abort> {
     let spec = match s {
         SkipCode::Fil => FIL_GLUE,
         SkipCode::Fill => FILL_GLUE,
         SkipCode::Ss => SS_GLUE,
         SkipCode::FilNeg => FIL_NEG_GLUE,
-        SkipCode::Skip => scan_glue(st, ValueLevel::Glue)?,
-        SkipCode::Mskip => scan_glue(st, ValueLevel::Mu)?,
+        SkipCode::Skip => scan_glue(st, env, ValueLevel::Glue)?,
+        SkipCode::Mskip => scan_glue(st, env, ValueLevel::Mu)?,
     };
     let g = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, g);
@@ -597,26 +616,34 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
     Ok(g)
 }
 
-pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
+pub(super) fn append_kern(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    mu: bool,
+) -> Result<(), Abort> {
     let s = if mu {
         KernSubtype::MuGlue
     } else {
         KernSubtype::Explicit
     };
-    let d = scan_dimen(st, mu)?;
+    let d = scan_dimen(st, env, mu)?;
     let p = st.mem.new_kern(d)?;
     st.mem[p].subtype = s.into();
     st.input.cur_list.tail_append(&mut st.mem, p);
     Ok(())
 }
 
-pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> {
+pub(super) fn make_mark(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    marks: bool,
+) -> Result<(), Abort> {
     let c = if marks {
-        i32::from(scan_register_num(st)?)
+        i32::from(scan_register_num(st, env)?)
     } else {
         0
     };
-    scan_toks(st, false, true)?;
+    scan_toks(st, env, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
     let node = &mut st.mem[mark];
     node.mark_class = c;
@@ -645,10 +672,11 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn off_save(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
         return error(
             st,
+            env,
             ("Extra ", st.scanner.cur),
             &["Things are pretty mixed up, but I think the worst is over."],
         );
@@ -660,9 +688,10 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.tokens.push(&list, token)?;
     }
     let list = st.mem.tokens.finish(list)?;
-    begin_token_list(st, list, TokenType::Inserted)?;
+    begin_token_list(st, env, list, TokenType::Inserted)?;
     error(
         st,
+        env,
         ("Missing ", insertion, " inserted"),
         &[
             "I've inserted something that you may have forgotten.",
@@ -674,32 +703,36 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
+fn begin_disc_group(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.save_stack.new_save_level(GroupCode::Disc, st.mem.line)?;
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
     push_nest(st)?;
     st.input.cur_list.mode = Mode::horizontal(true);
     Ok(())
 }
 
-pub(super) fn append_discretionary(st: &mut EngineState, hyphen: bool) -> Result<(), Abort> {
+pub(super) fn append_discretionary(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    hyphen: bool,
+) -> Result<(), Abort> {
     let d = st.mem.new_disc()?;
     st.input.cur_list.tail_append(&mut st.mem, d);
     if hyphen {
         let f = st.eqtb.cur_font();
         let c = st.fonts.hyphen_char[f];
         if (0..=BIGGEST_CHAR).contains(&c) {
-            let ch = new_character(st, f, c as u16)?;
+            let ch = new_character(st, env, f, c as u16)?;
             st.mem[d].pre_break = ch.map(|c| c.addr());
         }
         return Ok(());
     }
     st.save_stack.push_saved(Saved::DiscPart(0));
-    begin_disc_group(st)
+    begin_disc_group(st, env)
 }
 
-fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
-    unsave(st)?;
+fn build_discretionary(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    unsave(st, env)?;
     let head = st.input.cur_list.head;
     let mut q = head;
     let mut p = q.link(&st.mem);
@@ -718,13 +751,18 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             if !allowed {
                 error(
                     st,
+                    env,
                     "Improper discretionary list",
                     &["Discretionary lists must contain only boxes and kerns."],
                 )?;
                 begin_diagnostic(st);
-                print_nl(st, "The following discretionary sublist has been deleted:");
-                show_box(st, p);
-                end_diagnostic(st, true);
+                print_nl(
+                    st,
+                    env,
+                    "The following discretionary sublist has been deleted:",
+                );
+                show_box(st, env, p);
+                end_diagnostic(st, env, true);
                 st.mem.flush_node_list(p)?;
                 q.set_link(&mut st.mem, None);
                 break;
@@ -752,6 +790,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 n = 0;
                 error(
                     st,
+                    env,
                     ("Illegal math ", Esc("discretionary")),
                     &[
                         "Sorry: The third part of a discretionary break must be",
@@ -766,6 +805,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 error(
                     st,
+                    env,
                     "Discretionary list is too long",
                     &[
                         "Wow---I never thought anybody would tweak me here.",
@@ -784,7 +824,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     if let Some(Saved::DiscPart(part)) = st.save_stack.top_saved_mut() {
         *part += 1;
     }
-    begin_disc_group(st)
+    begin_disc_group(st, env)
 }
 
 fn char_italic(st: &mut EngineState, f: FontId, character: u16) -> Scaled {
@@ -820,10 +860,10 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
     Ok(())
 }
 
-pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
-    let c = scan_char_num(st)?;
+pub(super) fn make_accent(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    let c = scan_char_num(st, env)?;
     let f = st.eqtb.cur_font();
-    let Some(p) = new_character(st, f, c as u16)? else {
+    let Some(p) = new_character(st, env, f, c as u16)? else {
         return Ok(());
     };
     let x = st.fonts.param(f, X_HEIGHT_CODE);
@@ -844,16 +884,16 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         }
     };
 
-    do_assignments(st)?;
+    do_assignments(st, env)?;
     let f = st.eqtb.cur_font();
     let (q, qc) = match st.scanner.cur {
         Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c) => {
             let qc = c.raw();
-            (new_character(st, f, qc as u16)?, qc)
+            (new_character(st, env, f, qc as u16)?, qc)
         }
         Command::CharNum => {
-            let qc = scan_char_num(st)?;
-            (new_character(st, f, qc as u16)?, qc)
+            let qc = scan_char_num(st, env)?;
+            (new_character(st, env, f, qc as u16)?, qc)
         }
         _ => {
             back_input(st)?;
@@ -881,7 +921,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let accent = if h == x {
         p.addr()
     } else {
-        let b = hpack(st, p.ptr(), PackSpec::NATURAL)?;
+        let b = hpack(st, env, p.ptr(), PackSpec::NATURAL)?;
         st.mem[b].shift_amount = x - h;
         b.idx()
     };

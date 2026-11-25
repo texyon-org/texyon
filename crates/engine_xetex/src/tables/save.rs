@@ -8,6 +8,7 @@ use crate::base::token::Token;
 use crate::base::units::SavePtr;
 use crate::build::main_control::BoxContext;
 use crate::build::packaging::PackSpec;
+use crate::env::EngineEnv;
 use crate::memory::mem::MemState;
 use crate::memory::node::MathSlot;
 use crate::print::errors::{Abort, Capacity, OrConfusion, error};
@@ -62,12 +63,13 @@ impl SaveStackState {
     }
 }
 
-pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn prepare_mag(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let mag = st.eqtb.int_par(IntPar::Mag);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
         error(
             st,
+            env,
             (
                 "Incompatible magnification (",
                 mag,
@@ -88,6 +90,7 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     if mag <= 0 || mag > 32768 {
         error(
             st,
+            env,
             (
                 "Illegal magnification has been changed to 1000",
                 " (",
@@ -111,7 +114,7 @@ impl MemState {
     }
 }
 
-pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn unsave(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.save_stack.cur_level <= LEVEL_ONE {
         return Err(Abort::Confusion("curlevel"));
     }
@@ -158,7 +161,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     if st.input.open_levels[st.input.in_open].grp == st.save_stack.cur_boundary {
-        group_warning(st);
+        group_warning(st, env);
     }
     let ss = &mut st.save_stack;
     let (group, below, _) = ss.boundary_at(ss.save_ptr).or_confusion("unsave")?;
@@ -201,11 +204,11 @@ pub(crate) enum Closer {
 }
 
 impl TexPrint for Closer {
-    fn print_to(&self, st: &mut EngineState) {
+    fn print_to(&self, st: &mut EngineState, env: &mut EngineEnv) {
         match self {
-            Closer::EndGroup => print(st, Esc("endgroup")),
-            Closer::MathShift => print(st, '$'),
-            Closer::Right => print(st, Esc("right")),
+            Closer::EndGroup => print(st, env, Esc("endgroup")),
+            Closer::MathShift => print(st, env, '$'),
+            Closer::Right => print(st, env, Esc("right")),
         }
     }
 }
@@ -226,11 +229,11 @@ impl Insertion {
 }
 
 impl TexPrint for Insertion {
-    fn print_to(&self, st: &mut EngineState) {
+    fn print_to(&self, st: &mut EngineState, env: &mut EngineEnv) {
         match self.0 {
-            Some(Closer::Right) => print(st, Esc("right.")),
-            Some(closer) => print(st, closer),
-            None => print(st, '}'),
+            Some(Closer::Right) => print(st, env, Esc("right.")),
+            Some(closer) => print(st, env, closer),
+            None => print(st, env, '}'),
         }
     }
 }

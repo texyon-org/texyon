@@ -1,4 +1,4 @@
-//! Tagged byte handles for immutable in-memory TeX sources.
+//! Byte channels over the immutable in-memory TeX sources.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -8,9 +8,6 @@ use std::sync::Arc;
 
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
 use crate::ffi::bridge::FileFormat;
-
-const MEM_TAG: usize = 1usize << (usize::BITS - 1);
-const INDEX_MASK: usize = !MEM_TAG;
 
 thread_local! {
     static ACTIVE: RefCell<Option<ReplaySources>> = const { RefCell::new(None) };
@@ -128,7 +125,7 @@ pub(crate) fn observed_bytes() -> usize {
     OBSERVED_BYTES.get()
 }
 
-pub(crate) fn open_primary() -> Option<usize> {
+pub(crate) fn open_primary() -> Option<MemoryInputId> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
@@ -137,7 +134,7 @@ pub(crate) fn open_primary() -> Option<usize> {
     })
 }
 
-pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<usize> {
+pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<MemoryInputId> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
@@ -171,24 +168,6 @@ pub(crate) fn holds_directory(dir: &str) -> bool {
     })
 }
 
-pub(crate) fn clear_last_path() {
-    ACTIVE.with(|active| {
-        if let Some(active) = active.borrow_mut().as_mut() {
-            active.last_path = None;
-        }
-    });
-}
-
-/// Whether replay opened the last input, which it does only under the exact requested name.
-pub(crate) fn opened_last() -> bool {
-    ACTIVE.with(|active| {
-        active
-            .borrow()
-            .as_ref()
-            .is_some_and(|sources| sources.last_path.is_some())
-    })
-}
-
 pub(crate) fn last_abspath(max_len: usize) -> Option<Vec<u8>> {
     ACTIVE.with(|active| {
         let active = active.borrow();
@@ -203,17 +182,6 @@ pub(crate) fn last_abspath(max_len: usize) -> Option<Vec<u8>> {
 /// A snapshot input opened through the installed sources.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct MemoryInputId(usize);
-
-impl MemoryInputId {
-    /// The memory input behind `handle`, if it is one.
-    pub(crate) fn from_handle(handle: usize) -> Option<Self> {
-        is_mem(handle).then(|| Self(index(handle)))
-    }
-
-    fn handle(self) -> usize {
-        MEM_TAG | (self.0 + 1)
-    }
-}
 
 /// The whole file behind `id` and the position its reader stands at.
 pub(crate) fn contents(id: MemoryInputId) -> (Arc<[u8]>, usize) {
@@ -230,16 +198,8 @@ pub(crate) fn sync(id: MemoryInputId, position: usize, reached: usize) {
 }
 
 /// Closes `id`, returning whether it was already closed.
-pub(crate) fn close_memory(id: MemoryInputId) -> bool {
-    with_input(id.handle(), |input| mem::replace(&mut input.closed, true)).unwrap_or(true)
-}
-
-fn with_memory_input<T>(id: MemoryInputId, f: impl FnOnce(&mut MemoryInput) -> T) -> T {
-    with_open_input(id.handle(), f).expect("memory input id is a memory handle")
-}
-
-pub(crate) fn is_mem(handle: usize) -> bool {
-    handle & MEM_TAG != 0
+pub(crate) fn close(id: MemoryInputId) -> bool {
+    with_input(id, |input| mem::replace(&mut input.closed, true))
 }
 
 pub(crate) fn checkpoint_input_is_open(checkpoints: &[MemoryInput], id: MemoryInputId) -> bool {
@@ -264,23 +224,20 @@ pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
 /// Answer a size query without recording a dependency, since the cursor does
 /// not move. A document that typesets such a size keeps a stale value until
 /// the next full compile.
-pub(crate) fn get_size(handle: usize) -> Option<usize> {
-    with_open_input(handle, |input| input.bytes.len())
+pub(crate) fn get_size(id: MemoryInputId) -> usize {
+    with_memory_input(id, |input| input.bytes.len())
 }
 
-pub(crate) fn read(handle: usize, data: &mut [u8]) -> Option<libc::ssize_t> {
+/// Fills `data` from `id`, returning whether it was filled.
+pub(crate) fn read(id: MemoryInputId, data: &mut [u8]) -> bool {
     let len = data.len();
-    with_open_input(handle, |input| {
+    with_memory_input(id, |input| {
         let available = input.bytes.len().saturating_sub(input.position);
         let copied = len.min(available);
         data[..copied].copy_from_slice(&input.bytes[input.position..input.position + copied]);
         input.position += copied;
         observe_through(input, input.position);
-        if copied == len {
-            len as libc::ssize_t
-        } else {
-            -1
-        }
+        copied == len
     })
 }
 
@@ -290,33 +247,22 @@ fn observe_through(input: &mut MemoryInput, position: usize) {
     OBSERVED_BYTES.set(OBSERVED_BYTES.get().saturating_add(newly_observed));
 }
 
-pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> Option<usize> {
-    with_open_input(handle, |input| {
-        let base = match whence {
-            libc::SEEK_SET => 0i128,
-            libc::SEEK_CUR => input.position as i128,
-            libc::SEEK_END => input.bytes.len() as i128,
-            _ => return 0,
-        };
-        let target = base + offset as i128;
-        if !(0..=input.bytes.len() as i128).contains(&target) {
+/// Moves `id` to byte `target`, returning the new position, or 0 past the end.
+pub(crate) fn seek(id: MemoryInputId, target: usize) -> usize {
+    with_memory_input(id, |input| {
+        if target > input.bytes.len() {
             // The engine learned the file's extent, so hold the fence to all of it.
             observe_through(input, input.bytes.len());
             return 0;
         }
-        input.position = target as usize;
+        input.position = target;
         observe_through(input, input.position);
         input.position
     })
 }
 
-/// Returns whether the channel was already closed.
-pub(crate) fn close(handle: usize) -> Option<bool> {
-    with_input(handle, |input| mem::replace(&mut input.closed, true))
-}
-
 impl ReplaySources {
-    fn open(&mut self, (path, bytes, identity): ResolvedSource) -> usize {
+    fn open(&mut self, (path, bytes, identity): ResolvedSource) -> MemoryInputId {
         self.inputs.push(MemoryInput {
             path: path.clone(),
             bytes,
@@ -326,34 +272,25 @@ impl ReplaySources {
             closed: false,
         });
         self.last_path = Some(path);
-        MEM_TAG | self.inputs.len()
+        MemoryInputId(self.inputs.len() - 1)
     }
 }
 
-fn with_input<T>(handle: usize, f: impl FnOnce(&mut MemoryInput) -> T) -> Option<T> {
-    if !is_mem(handle) {
-        return None;
-    }
+fn with_input<T>(id: MemoryInputId, f: impl FnOnce(&mut MemoryInput) -> T) -> T {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active
             .as_mut()
-            .expect("memory handle without installed snapshot");
-        Some(f(&mut sources.inputs[index(handle)]))
+            .expect("memory input without installed snapshot");
+        f(&mut sources.inputs[id.0])
     })
 }
 
-fn with_open_input<T>(handle: usize, f: impl FnOnce(&mut MemoryInput) -> T) -> Option<T> {
-    with_input(handle, |input| {
+fn with_memory_input<T>(id: MemoryInputId, f: impl FnOnce(&mut MemoryInput) -> T) -> T {
+    with_input(id, |input| {
         assert!(!input.closed, "use of closed memory input");
         f(input)
     })
-}
-
-fn index(handle: usize) -> usize {
-    let raw = handle & INDEX_MASK;
-    assert!(raw > 0, "zero memory input index");
-    raw - 1
 }
 
 #[cfg(test)]
@@ -374,25 +311,25 @@ mod tests {
         .unwrap()
     }
 
-    fn byte(handle: usize) -> Option<u8> {
+    fn byte(id: MemoryInputId) -> Option<u8> {
         let mut buf = [0u8; 1];
-        (read(handle, &mut buf) == Some(1)).then_some(buf[0])
+        read(id, &mut buf).then_some(buf[0])
     }
 
     #[test]
-    fn tagged_inputs_match_seek_and_exact_read_semantics() {
+    fn inputs_match_seek_and_exact_read_semantics() {
         let mut written = BTreeSet::new();
         let _guard = install(snapshot(), &mut written);
-        let handle = open_primary().unwrap();
-        assert!(is_mem(handle));
-        assert_eq!(get_size(handle), Some(3));
-        assert_eq!(byte(handle), Some(b'a'));
-        assert_eq!(seek(handle, 1, libc::SEEK_SET), Some(1));
+        let id = open_primary().unwrap();
+        assert_eq!(get_size(id), 3);
+        assert_eq!(byte(id), Some(b'a'));
+        assert_eq!(seek(id, 1), 1);
         let mut buf = [0u8; 2];
-        assert_eq!(read(handle, &mut buf), Some(2));
+        assert!(read(id, &mut buf));
         assert_eq!(&buf, b"bc");
-        assert_eq!(byte(handle), None);
-        assert_eq!(close(handle), Some(false));
+        assert_eq!(byte(id), None);
+        assert!(!close(id));
+        assert!(close(id));
     }
 
     #[test]
@@ -401,8 +338,7 @@ mod tests {
         let _guard = install(snapshot(), &mut written);
         let primary = open_primary().unwrap();
         let child = open_named("child", FileFormat::Tex).unwrap();
-        assert!(is_mem(primary));
-        assert!(is_mem(child));
+        assert_ne!(primary, child);
         assert_eq!(byte(primary), Some(b'a'));
         assert_eq!(byte(child), Some(b'x'));
     }
@@ -410,20 +346,20 @@ mod tests {
     #[test]
     fn checkpoint_recreates_handle_order_and_cursor() {
         let mut written = BTreeSet::new();
-        let checkpoints = {
+        let (checkpoints, primary, child) = {
             let _guard = install(snapshot(), &mut written);
             let primary = open_primary().unwrap();
             let child = open_named("child", FileFormat::Tex).unwrap();
             assert_eq!(byte(primary), Some(b'a'));
             assert_eq!(byte(child), Some(b'x'));
             assert_eq!(byte(child), Some(b'y'));
-            checkpoint_inputs().unwrap()
+            (checkpoint_inputs().unwrap(), primary, child)
         };
 
         let _guard = install(snapshot(), &mut written);
         assert!(restore_inputs(&checkpoints));
-        assert_eq!(byte(MEM_TAG | 1), Some(b'b'));
-        assert_eq!(byte(MEM_TAG | 2), Some(b'z'));
+        assert_eq!(byte(primary), Some(b'b'));
+        assert_eq!(byte(child), Some(b'z'));
     }
 
     #[test]
@@ -434,12 +370,12 @@ mod tests {
         assert_eq!(observed_bytes(), 0);
         assert_eq!(byte(primary), Some(b'a'));
         assert_eq!(observed_bytes(), 1);
-        assert_eq!(seek(primary, 0, libc::SEEK_SET), Some(0));
+        assert_eq!(seek(primary, 0), 0);
         assert_eq!(byte(primary), Some(b'a'));
         assert_eq!(observed_bytes(), 1);
         let child = open_named("child", FileFormat::Tex).unwrap();
         let mut buf = [0u8; 2];
-        assert_eq!(read(child, &mut buf), Some(2));
+        assert!(read(child, &mut buf));
         assert_eq!(observed_bytes(), 3);
 
         let checkpoints = checkpoint_inputs().unwrap();

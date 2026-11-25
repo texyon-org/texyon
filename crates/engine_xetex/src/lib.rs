@@ -10,14 +10,16 @@
 
 use std::time::SystemTime;
 
-use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
+use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError, engine_lock};
 use texyon_errors::prelude::*;
 
+use crate::env::EngineEnv;
 use crate::state::ConfigState;
 
 mod base;
 mod build;
 mod engine;
+mod env;
 mod ffi;
 mod files;
 mod fonts;
@@ -153,26 +155,26 @@ impl TexEngine {
             ..ConfigState::default()
         };
 
-        launcher.with_global_lock(|state| {
-            let r = run_engine(
-                state,
-                config,
-                format_file_name,
-                input_file_name,
-                self.build_date
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("invalid build date")
-                    .as_secs() as libc::time_t,
-            );
+        let _lock = engine_lock();
+        let mut env = EngineEnv::new(launcher.host());
+        let r = run_engine(
+            &mut env,
+            config,
+            format_file_name,
+            input_file_name,
+            self.build_date
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("invalid build date")
+                .as_secs() as libc::time_t,
+        );
 
-            match r {
-                0 => Ok(TexOutcome::Spotless),
-                1 => Ok(TexOutcome::Warnings),
-                2 => Ok(TexOutcome::Errors),
-                3 => Err(EngineAbortedError::new_abort_indicator().into()),
-                x => Err(anyhow!("internal error: unexpected 'history' value {}", x)),
-            }
-        })
+        match r {
+            0 => Ok(TexOutcome::Spotless),
+            1 => Ok(TexOutcome::Warnings),
+            2 => Ok(TexOutcome::Errors),
+            3 => Err(EngineAbortedError::new_with_details().into()),
+            x => Err(anyhow!("internal error: unexpected 'history' value {}", x)),
+        }
     }
 }
 

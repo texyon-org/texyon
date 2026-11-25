@@ -15,6 +15,7 @@ use crate::build::packaging::{
     AdjustTails, LrState, PackOrigin, PackSpec, append_to_vlist, hpack, hpack_with,
 };
 use crate::build::pagebuilder::build_page;
+use crate::env::EngineEnv;
 use crate::fonts::{FontState, QUAD_CODE};
 use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE, push_nest};
 use crate::memory::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
@@ -28,24 +29,24 @@ use crate::tables::save::{GroupCode, Saved, unsave};
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
 
-pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn resume_after_display(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::MathShift {
         return Err(Abort::Confusion("display"));
     }
 
-    unsave(st)?;
+    unsave(st, env)?;
     st.input.cur_list.prev_graf = st.input.cur_list.prev_graf.wrapping_add(3);
     push_nest(st)?;
     st.input.cur_list.mode = Mode::horizontal(false);
 
     start_paragraph_language(st)?;
 
-    get_x_token(st)?;
+    get_x_token(st, env)?;
     if st.scanner.cur.cmd() != Cmd::Spacer {
         back_input(st)?;
     }
     if st.input.nest.len() == 1 {
-        build_page(st)?;
+        build_page(st, env)?;
     }
     Ok(())
 }
@@ -89,6 +90,7 @@ impl MemState {
 
 fn app_display(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     j: Option<NodePtr<BoxNode>>,
     orig: NodePtr<BoxNode>,
     d: Scaled,
@@ -186,7 +188,7 @@ fn app_display(
         u.set_link(&mut st.mem, Some(r));
         match copy {
             None => {
-                b = hpack(st, Some(u), PackSpec::NATURAL)?;
+                b = hpack(st, env, Some(u), PackSpec::NATURAL)?;
                 st.mem[b].shift_amount = s;
             }
             Some(bc) => st.mem[bc].list_ptr = Some(u),
@@ -198,7 +200,7 @@ fn app_display(
 
 /// Checks the family 2 and 3 fonts. On failure reports the error, flushes the
 /// formula and returns `true` (TeX's `danger`).
-fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
+fn check_math_fonts(st: &mut EngineState, env: &mut EngineEnv) -> Result<bool, Abort> {
     let sizes = [TEXT_SIZE, SCRIPT_SIZE, SCRIPT_SCRIPT_SIZE];
     let (msg, help) = if !sizes.iter().all(|&z| st.fonts.sym_font_ok(&st.eqtb, z)) {
         (
@@ -221,16 +223,17 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
     } else {
         return Ok(false);
     };
-    error(st, msg, &help)?;
+    error(st, env, msg, &help)?;
     st.input.cur_list.flush_math(&mut st.mem)?;
     Ok(true)
 }
 
-pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
-    get_x_token(st)?;
+pub(crate) fn check_display_end(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_x_token(st, env)?;
     if st.scanner.cur.cmd() != Cmd::MathShift {
         back_error(
             st,
+            env,
             "Display math should end with $$",
             &[
                 "The `$' that I just saw supposedly matches a previous `$$'.",
@@ -249,28 +252,28 @@ fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
     st.mem.classify_box(j).ok().flatten()
 }
 
-pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn after_math(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let mut j = pre_display_box(st);
-    let mut danger = check_math_fonts(st)?;
+    let mut danger = check_math_fonts(st, env)?;
     let mut inline = st.input.cur_list.mode.is_inner();
     let mut l = false;
     let mut p = fin_mlist(st, None)?;
 
     let a;
     if inline && st.input.cur_list.mode.name() == ModeName::DisplayMath {
-        check_display_end(st)?;
-        let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, false)?;
-        let eqno = hpack(st, hlist, PackSpec::NATURAL)?;
+        check_display_end(st, env)?;
+        let hlist = mlist_to_hlist(st, env, p, MathStyle::TEXT, false)?;
+        let eqno = hpack(st, env, hlist, PackSpec::NATURAL)?;
         st.mem[eqno].set_lr(BoxLr::Dlist);
         a = Some(eqno);
-        unsave(st)?;
+        unsave(st, env)?;
         match st.save_stack.pop_saved() {
             Some(Saved::EqNo { left }) => l = left,
             _ => return Err(Abort::Confusion("eqno")),
         }
 
         j = pre_display_box(st);
-        danger = check_math_fonts(st)?;
+        danger = check_math_fonts(st, env)?;
         inline = st.input.cur_list.mode.is_inner();
         p = fin_mlist(st, None)?;
     } else {
@@ -282,7 +285,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         let node = st.mem.new_math(math_surround, MathCode::Before)?;
         st.input.cur_list.tail_append(&mut st.mem, node);
         let penalties = st.input.cur_list.mode.is_outer();
-        let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, penalties)?;
+        let hlist = mlist_to_hlist(st, env, p, MathStyle::TEXT, penalties)?;
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
         cl.tail = st.mem.list_tail(cl.tail);
@@ -291,20 +294,21 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.set_space_factor(1000)?;
 
         if st.config.semantic_pagination_enabled {
-            insert_special(st, "tdux:ce math")?;
+            insert_special(st, env, "tdux:ce math")?;
         }
 
-        unsave(st)?;
+        unsave(st, env)?;
         return Ok(());
     }
 
     if a.is_none() {
-        check_display_end(st)?;
+        check_display_end(st, env)?;
     }
-    let mut p = mlist_to_hlist(st, p, MathStyle::DISPLAY, false)?;
+    let mut p = mlist_to_hlist(st, env, p, MathStyle::DISPLAY, false)?;
     let mut adjust = AdjustTails::HEADS;
     let packed = hpack_with(
         st,
+        env,
         p,
         PackSpec::NATURAL,
         PackOrigin::Here,
@@ -339,12 +343,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
                 || packed.shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
             b.free(&mut st.mem);
-            b = hpack(st, p, PackSpec::Exactly(z - q))?;
+            b = hpack(st, env, p, PackSpec::Exactly(z - q))?;
         } else {
             e = Scaled::ZERO;
             if w > z {
                 b.free(&mut st.mem);
-                b = hpack(st, p, PackSpec::Exactly(z))?;
+                b = hpack(st, env, p, PackSpec::Exactly(z))?;
             }
         }
         w = st.mem[b].width;
@@ -377,7 +381,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     };
 
     if let Some(eqno) = a.filter(|_| l && e == Scaled::ZERO) {
-        app_display(st, j, eqno, Scaled::ZERO)?;
+        app_display(st, env, j, eqno, Scaled::ZERO)?;
         let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen);
     } else {
@@ -396,16 +400,16 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
             st.mem[b].link = r.ptr();
             st.mem[r].link = eqno.ptr();
         }
-        b = hpack(st, b.ptr(), PackSpec::NATURAL)?;
+        b = hpack(st, env, b.ptr(), PackSpec::NATURAL)?;
     }
 
-    app_display(st, j, b, d)?;
+    app_display(st, env, j, b, d)?;
 
     if let Some(eqno) = a.filter(|_| e == Scaled::ZERO && !l) {
         let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen);
         let a_width = st.mem[eqno].width;
-        app_display(st, j, eqno, z - a_width)?;
+        app_display(st, env, j, eqno, z - a_width)?;
         g2 = None;
     }
 
@@ -436,10 +440,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.config.semantic_pagination_enabled {
-        insert_special(st, "tdux:ce dmath")?;
+        insert_special(st, env, "tdux:ce dmath")?;
     }
 
-    resume_after_display(st)
+    resume_after_display(st, env)
 }
 
 fn pre_display_direction(st: &EngineState) -> i32 {
@@ -461,8 +465,8 @@ fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemIdx, Abort> {
     }
 }
 
-pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
-    get_token(st)?;
+pub(crate) fn init_math(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    get_token(st, env)?;
 
     if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode.is_outer() {
         let mut j = None;
@@ -473,7 +477,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input)?;
             x = pre_display_direction(st);
         } else {
-            let jb = line_break(st, true)?;
+            let jb = line_break(st, env, true)?;
 
             let right = side_skip(st, GluePar::RightSkip)?;
             let left = side_skip(st, GluePar::LeftSkip)?;
@@ -668,29 +672,29 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         define(st, false, DimenPar::DisplayIndent.loc(), s)?;
 
         if st.config.semantic_pagination_enabled {
-            insert_special(st, "tdux:cs dmath")?;
+            insert_special(st, env, "tdux:cs dmath")?;
         }
 
         let every_display = st.eqtb.tok_par(TokPar::EveryDisplay);
         if !every_display.is_null() {
-            begin_token_list(st, every_display, TokenType::EveryDisplay)?;
+            begin_token_list(st, env, every_display, TokenType::EveryDisplay)?;
         }
         if st.input.nest.len() == 1 {
-            build_page(st)?;
+            build_page(st, env)?;
         }
     } else {
         back_input(st)?;
         push_math(st, GroupCode::MathShift)?;
         define(st, false, IntPar::CurFam.loc(), -1)?;
         if st.shipout.insert_src_special_every_math {
-            insert_src_special(st)?;
+            insert_src_special(st, env)?;
         }
         if st.config.semantic_pagination_enabled {
-            insert_special(st, "tdux:cs math")?;
+            insert_special(st, env, "tdux:cs math")?;
         }
         let every_math = st.eqtb.tok_par(TokPar::EveryMath);
         if !every_math.is_null() {
-            begin_token_list(st, every_math, TokenType::EveryMath)?;
+            begin_token_list(st, env, every_math, TokenType::EveryMath)?;
         }
     }
     Ok(())

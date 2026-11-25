@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::base::consts::{EMPTY_STRING, NULL_FONT, TOO_BIG_CHAR};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled, StrNumber};
+use crate::env::EngineEnv;
 use crate::ffi::bridge::FileFormat;
 use crate::ffi::teckit_icu::{FontMappingHandle, LinebreakHandle};
 use crate::files::io::{FileName, ScannedName, open_input_file};
@@ -74,11 +75,10 @@ use std::sync::Arc;
 use crate::base::codes::code_enum;
 use crate::base::scaled_math::{Divided, xn_over_d};
 use crate::base::utf8::utf16_units;
-use crate::files::input_file::InputFile;
 pub(crate) use crate::fonts::tfm::{
     CharInfo, CharTag, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
 };
-use crate::fonts::tfm::{Tfm, read_tfm};
+use crate::fonts::tfm::{Tfm, TfmBytes, read_tfm};
 use crate::memory::glue_store::GlueSpecId;
 use crate::print::errors::error;
 
@@ -275,15 +275,21 @@ impl MemState {
     }
 }
 
-fn check_native_char(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abort> {
+fn check_native_char(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    f: FontId,
+    c: i32,
+) -> Result<(), Abort> {
     if st.fonts.map_char_to_glyph(f, c)? == 0 {
-        char_warning(st, f, c)?;
+        char_warning(st, env, f, c)?;
     }
     Ok(())
 }
 
 pub(crate) fn new_native_character(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     f: FontId,
     c: u32,
 ) -> Result<NodePtr<NativeWordNode>, Abort> {
@@ -302,17 +308,17 @@ pub(crate) fn new_native_character(
             if (0xD800..0xDC00).contains(&mapped) {
                 let low = u32::from(st.fonts.mapped_text[(i + 1) as usize]);
                 let c = (u32::from(mapped) - 0xD800) * 1024 + low + 9216;
-                check_native_char(st, f, c as i32)?;
+                check_native_char(st, env, f, c as i32)?;
                 i += 2;
             } else {
-                check_native_char(st, f, i32::from(mapped))?;
+                check_native_char(st, env, f, i32::from(mapped))?;
                 i += 1;
             }
         }
         NativeCharSrc::Mapped(len)
     } else {
         if st.eqtb.int_par(IntPar::TracingLostChars) > 0 {
-            check_native_char(st, f, c as i32)?;
+            check_native_char(st, env, f, c as i32)?;
         }
         NativeCharSrc::Single(c)
     };
@@ -373,25 +379,26 @@ impl FontSpec {
 }
 
 impl TexPrint for FontSpec {
-    fn print_to(&self, st: &mut EngineState) {
-        print(st, ("Font ", CsName(Some(self.cs)), '='));
+    fn print_to(&self, st: &mut EngineState, env: &mut EngineEnv) {
+        print(st, env, ("Font ", CsName(Some(self.cs)), '='));
         if let Some(q) = self.quote {
-            print_char(st, q);
+            print_char(st, env, q);
         }
-        print(st, self.file);
+        print(st, env, self.file);
         if let Some(q) = self.quote {
-            print_char(st, q);
+            print_char(st, env, q);
         }
         match self.size {
-            FontSize::At(s) => print(st, (" at ", s, "pt")),
+            FontSize::At(s) => print(st, env, (" at ", s, "pt")),
             FontSize::DESIGN => {}
-            FontSize::Scaled(m) => print(st, (" scaled ", m)),
+            FontSize::Scaled(m) => print(st, env, (" scaled ", m)),
         }
     }
 }
 
 pub(crate) fn read_font_info(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     u: CsId,
     name: &ScannedName,
     s: FontSize,
@@ -405,7 +412,7 @@ pub(crate) fn read_font_info(
     let mut name_too_long = false;
     let mut opened_name = Vec::new();
     let mut g = NULL_FONT;
-    let mut tfm_file = None;
+    let mut file_opened = false;
 
     // Native fonts get the name as written, TFM lookups a form without extension and mapping.
     let path = name.file.path(&st.strings);
@@ -418,26 +425,26 @@ pub(crate) fn read_font_info(
 
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
         begin_diagnostic(st);
-        print_nl(st, "Requested font \"");
-        print(st, path.as_slice());
-        print_char(st, b'"');
+        print_nl(st, env, "Requested font \"");
+        print(st, env, path.as_slice());
+        print_char(st, env, b'"');
         match s {
             FontSize::Scaled(m) => {
-                print(st, " scaled ");
-                print_int(st, m);
+                print(st, env, " scaled ");
+                print_int(st, env, m);
             }
             FontSize::At(s) => {
-                print(st, " at ");
-                print_scaled(st, s);
-                print(st, "pt");
+                print(st, env, " at ");
+                print_scaled(st, env, s);
+                print(st, env, "pt");
             }
         }
-        end_diagnostic(st, false);
+        end_diagnostic(st, env, false);
     }
 
     let bad_tfm = 'read: {
         if name.quoted {
-            g = load_native_font(st, font, &path)?;
+            g = load_native_font(st, env, font, &path)?;
             if g != NULL_FONT {
                 break 'read false;
             }
@@ -448,16 +455,25 @@ pub(crate) fn read_font_info(
             break 'read true;
         }
 
-        let Some((file, found)) = open_input_file(st, tfm_name, FileFormat::Tfm) else {
+        let Some((file, found)) = open_input_file(st, env, tfm_name, FileFormat::Tfm) else {
             if !name.quoted {
-                g = load_native_font(st, font, &path)?;
+                g = load_native_font(st, env, font, &path)?;
                 if g != NULL_FONT {
                     break 'read false;
                 }
             }
             break 'read true;
         };
-        let file = tfm_file.insert(file);
+        let mut source = file.into_source();
+        let bytes = source.read_to_end(env);
+        if source.close(env) {
+            return Err(Abort::Internal(
+                "serious internal error closing the font metric file",
+            ));
+        }
+        file_opened = true;
+        // A file that cannot be read parses as a bad one.
+        let bytes = bytes.unwrap_or_default();
         opened_name = found.name;
 
         let mut too_big = false;
@@ -465,10 +481,11 @@ pub(crate) fn read_font_info(
         let room = |words: i32| {
             fonts.font_ptr != fonts.font_max && fonts.fmem_ptr + words <= fonts.font_mem_size
         };
-        let parse = read_tfm(file, s, room, &mut too_big);
+        let parse = read_tfm(&mut TfmBytes::new(&bytes), s, room, &mut too_big);
         if too_big {
             error(
                 st,
+                env,
                 (font, " scaled to 2048pt or higher"),
                 &["I will ignore the scaling factor."],
             )?;
@@ -482,7 +499,7 @@ pub(crate) fn read_font_info(
                 let f = st.fonts.install_tfm(&st.eqtb, tfm, nom, aire);
                 g = f;
                 st.fonts.font_mapping[f] = match tfm_mapping {
-                    Some(mapping) => load_mapping_file(st, mapping, true, tfm_name)?,
+                    Some(mapping) => load_mapping_file(st, env, mapping, true, tfm_name)?,
                     None => None,
                 };
                 false
@@ -491,7 +508,7 @@ pub(crate) fn read_font_info(
     };
 
     if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
-        let reason = if tfm_file.is_some() {
+        let reason = if file_opened {
             " not loadable: Bad metric (TFM) file"
         } else if name_too_long {
             " not loadable: Metric (TFM) file name too long"
@@ -500,6 +517,7 @@ pub(crate) fn read_font_info(
         };
         error(
             st,
+            env,
             (font, reason),
             &[
                 "I wasn't able to read the size data for this font,",
@@ -511,22 +529,15 @@ pub(crate) fn read_font_info(
         )?;
     }
 
-    let file_opened = tfm_file.is_some();
-    if tfm_file.is_some_and(InputFile::close) {
-        return Err(Abort::Internal(
-            "serious internal error closing the font metric file",
-        ));
-    }
-
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 && (g == NULL_FONT || file_opened) {
         begin_diagnostic(st);
-        print_nl(st, " -> ");
+        print_nl(st, env, " -> ");
         if g == NULL_FONT {
-            print(st, "font not found, using \"nullfont\"");
+            print(st, env, "font not found, using \"nullfont\"");
         } else {
-            print(st, opened_name.as_slice());
+            print(st, env, opened_name.as_slice());
         }
-        end_diagnostic(st, false);
+        end_diagnostic(st, env, false);
     }
 
     Ok(g)
@@ -601,9 +612,14 @@ impl FontState {
     }
 }
 
-fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result<FontId, Abort> {
+fn load_native_font(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    font: FontSpec,
+    name: &[u8],
+) -> Result<FontId, Abort> {
     let s = font.size;
-    let Some((font_engine, full_name)) = find_native_font(st, name, s)? else {
+    let Some((font_engine, full_name)) = find_native_font(st, env, name, s)? else {
         return Ok(NULL_FONT);
     };
 
@@ -644,6 +660,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
     {
         error(
             st,
+            env,
             (font, " not loaded: Not enough room left"),
             &[
                 "I'm afraid I won't be able to make use of this font,",
@@ -663,7 +680,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
         num_font_dimens,
     );
 
-    let space = new_native_character(st, font_ptr, u32::from(b' '))?;
+    let space = new_native_character(st, env, font_ptr, u32::from(b' '))?;
     let space_width = st.mem[space].width + st.fonts.loaded_font_letter_space;
     space.free_native(&mut st.mem);
 

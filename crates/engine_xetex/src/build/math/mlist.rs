@@ -13,6 +13,7 @@ use crate::base::scaled_math::{mult_and_add, x_over_n, xn_over_d};
 use crate::base::units::{FontId, GlueOrder, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 use crate::build::main_control::{NewChar, new_character};
 use crate::build::packaging::{PackSpec, hpack, vpackage};
+use crate::env::EngineEnv;
 use crate::fonts::{
     AAT_FONT_FLAG, CharInfo, CharTag, FontState, LigChar, LigKernAction, LigKernIdx, LigOp,
     OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE, new_native_character,
@@ -127,6 +128,7 @@ impl ListStateRecord {
 
 pub(super) fn clean_box(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     p: MathWord,
     s: MathStyle,
 ) -> Result<NodePtr<BoxNode>, Abort> {
@@ -134,10 +136,10 @@ pub(super) fn clean_box(
         MATH_CHAR => {
             let noad = st.mem.new_noad()?;
             st.mem[noad].nucleus = p;
-            mlist_to_hlist(st, noad.ptr(), s, false)?
+            mlist_to_hlist(st, env, noad.ptr(), s, false)?
         }
         SUB_BOX => p.info(),
-        SUB_MLIST => mlist_to_hlist(st, p.info(), s, false)?,
+        SUB_MLIST => mlist_to_hlist(st, env, p.info(), s, false)?,
         _ => st.mem.new_null_box()?.ptr(),
     };
 
@@ -152,7 +154,7 @@ pub(super) fn clean_box(
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => hpack(st, q, PackSpec::NATURAL)?,
+        None => hpack(st, env, q, PackSpec::NATURAL)?,
     };
 
     let head = st.mem[x_box].list_ptr;
@@ -223,12 +225,18 @@ impl MemState {
 }
 
 /// Look up math character `a`, reporting a missing font or character. Also sets `cur_f`.
-pub(super) fn fetch(st: &mut EngineState, a: MathSlot, size: i32) -> Result<Fetched, Abort> {
+pub(super) fn fetch(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    a: MathSlot,
+    size: i32,
+) -> Result<Fetched, Abort> {
     let (fetched, failure) = st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a, size);
     match failure {
         None => {}
         Some(FetchError::UndefinedFont { size, fam, c }) => error(
             st,
+            env,
             (
                 FamFont(size),
                 ' ',
@@ -244,7 +252,7 @@ pub(super) fn fetch(st: &mut EngineState, a: MathSlot, size: i32) -> Result<Fetc
                 "and I'll try to forget that I needed that character.",
             ],
         )?,
-        Some(FetchError::CharMissing { f, c }) => char_warning(st, f, c)?,
+        Some(FetchError::CharMissing { f, c }) => char_warning(st, env, f, c)?,
     }
     Ok(fetched)
 }
@@ -256,24 +264,34 @@ impl MemState {
     }
 }
 
-fn make_over(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
-    let x = clean_box(st, st.mem[q].nucleus, style.cramped())?;
+fn make_over(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    q: NodePtr<Noad>,
+    style: MathStyle,
+) -> Result<(), Abort> {
+    let x = clean_box(st, env, st.mem[q].nucleus, style.cramped())?;
     let rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let p = st.mem.overbar(x, rule_thickness * 3, rule_thickness)?;
-    let x = vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
+    let x = vpackage(st, env, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
 
-fn make_under(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
-    let x = clean_box(st, st.mem[q].nucleus, style)?;
+fn make_under(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    q: NodePtr<Noad>,
+    style: MathStyle,
+) -> Result<(), Abort> {
+    let x = clean_box(st, env, st.mem[q].nucleus, style)?;
     let rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let kern = st.mem.new_kern(rule_thickness * 3)?;
     st.mem[x].link = kern.ptr();
     let rule = st.mem.fraction_rule(rule_thickness)?;
     st.mem[kern].link = rule.ptr();
 
-    let y = vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+    let y = vpackage(st, env, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
     let delta = mem[y].height + mem[y].depth + rule_thickness;
     let height = mem[x].height;
@@ -300,6 +318,7 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Res
 
 fn make_radical(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<RadicalNoad>,
     style: MathStyle,
 ) -> Result<(), Abort> {
@@ -314,7 +333,7 @@ fn make_radical(
     };
 
     let clean_style = style.cramped();
-    let x = clean_box(st, st.mem[q].base.nucleus, clean_style)?;
+    let x = clean_box(st, env, st.mem[q].base.nucleus, clean_style)?;
     let cur_size = style.size();
     let mut clr = if is_ot_math {
         if style < MathStyle::TEXT {
@@ -330,7 +349,13 @@ fn make_radical(
     };
 
     let delimiter_height = st.mem[x].height + st.mem[x].depth + clr + rule_thickness;
-    let y = var_delimiter(st, st.mem[q].left_delimiter, cur_size, delimiter_height)?;
+    let y = var_delimiter(
+        st,
+        env,
+        st.mem[q].left_delimiter,
+        cur_size,
+        delimiter_height,
+    )?;
     let mem = &mut st.mem;
     if is_ot_math {
         let node = &mut mem[y];
@@ -343,9 +368,9 @@ fn make_radical(
     }
     mem[y].shift_amount = -(mem[x].height + clr);
     let p = mem.overbar(x, clr, mem[y].height)?;
-    let overbar_box = vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
+    let overbar_box = vpackage(st, env, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[y].link = overbar_box.ptr();
-    let hbox = hpack(st, y.ptr(), PackSpec::NATURAL)?;
+    let hbox = hpack(st, env, y.ptr(), PackSpec::NATURAL)?;
     st.mem.set_nucleus_box(q.as_noad(), hbox);
     Ok(())
 }
@@ -406,6 +431,7 @@ impl MemState {
 
 fn make_fraction(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<FractionNoad>,
     style: MathStyle,
 ) -> Result<(), Abort> {
@@ -414,15 +440,15 @@ fn make_fraction(
         st.mem[q].thickness = drt;
     }
 
-    let mut x = clean_box(st, st.mem[q].numerator, style.num())?;
-    let mut z = clean_box(st, st.mem[q].denominator, style.denom())?;
+    let mut x = clean_box(st, env, st.mem[q].numerator, style.num())?;
+    let mut z = clean_box(st, env, st.mem[q].denominator, style.denom())?;
 
     if st.mem[x].width < st.mem[z].width {
         let w = st.mem[z].width;
-        x = rebox(st, x, w)?;
+        x = rebox(st, env, x, w)?;
     } else {
         let w = st.mem[x].width;
-        z = rebox(st, z, w)?;
+        z = rebox(st, env, z, w)?;
     }
 
     let cur_size = style.size();
@@ -524,17 +550,22 @@ fn make_fraction(
         st.fonts.delim2(&st.eqtb, cur_size)
     };
 
-    let left_delim = var_delimiter(st, st.mem[q].left_delimiter, cur_size, delimiter_size)?;
-    let right_delim = var_delimiter(st, st.mem[q].right_delimiter, cur_size, delimiter_size)?;
+    let left_delim = var_delimiter(st, env, st.mem[q].left_delimiter, cur_size, delimiter_size)?;
+    let right_delim = var_delimiter(st, env, st.mem[q].right_delimiter, cur_size, delimiter_size)?;
     st.mem[left_delim].link = v.ptr();
     st.mem[v].link = right_delim.ptr();
-    let hbox = hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
+    let hbox = hpack(st, env, left_delim.ptr(), PackSpec::NATURAL)?;
     st.mem[q.any()].new_hlist = hbox.ptr();
     Ok(())
 }
 
 /// Returns the italic correction `delta`.
-fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<Scaled, Abort> {
+fn make_op(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    q: NodePtr<Noad>,
+    style: MathStyle,
+) -> Result<Scaled, Abort> {
     let mut delta = Scaled::ZERO;
 
     if st.mem[q].limits() == LimitCode::Normal && style < MathStyle::TEXT {
@@ -542,7 +573,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
     }
 
     if st.mem[q].nucleus.math_type == MATH_CHAR {
-        let Fetched { f, mut i, .. } = fetch(st, MathSlot::Nucleus(q), style.size())?;
+        let Fetched { f, mut i, .. } = fetch(st, env, MathSlot::Nucleus(q), style.size())?;
 
         if !st.fonts.font_uses_opentype(f) {
             if let Some(CharInfo {
@@ -557,7 +588,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
             delta = i.map_or(Scaled::ZERO, |i| i.italic);
         }
 
-        let x = clean_box(st, st.mem[q].nucleus, style)?;
+        let x = clean_box(st, env, st.mem[q].nucleus, style)?;
 
         let cur_f = st.scanner.cur_f;
         if st.fonts.font_is_ot_math(cur_f)
@@ -628,17 +659,17 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
     let save_f = st.scanner.cur_f;
     if st.mem[q].limits() == LimitCode::Limits {
         let cs = style;
-        let x = clean_box(st, st.mem[q].supscr, cs.sup())?;
-        let y = clean_box(st, st.mem[q].nucleus, cs)?;
-        let z = clean_box(st, st.mem[q].subscr, cs.sub())?;
+        let x = clean_box(st, env, st.mem[q].supscr, cs.sup())?;
+        let y = clean_box(st, env, st.mem[q].nucleus, cs)?;
+        let z = clean_box(st, env, st.mem[q].subscr, cs.sub())?;
 
         let v = st.mem.new_null_vbox()?;
         let w = st.mem[y].width.max(st.mem[x].width).max(st.mem[z].width);
         st.mem[v].width = w;
 
-        let x = rebox(st, x, w)?;
-        let y = rebox(st, y, w)?;
-        let z = rebox(st, z, w)?;
+        let x = rebox(st, env, x, w)?;
+        let y = rebox(st, env, y, w)?;
+        let z = rebox(st, env, z, w)?;
 
         let size = style.size();
         let bos1 = st.fonts.big_op_spacing1(&st.eqtb, size);
@@ -766,7 +797,12 @@ impl MemState {
     }
 }
 
-fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
+fn make_ord(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    q: NodePtr<Noad>,
+    style: MathStyle,
+) -> Result<(), Abort> {
     'restart: loop {
         if st.mem[q].subscr.math_type != EMPTY {
             return Ok(());
@@ -802,7 +838,7 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<
         }
 
         st.mem[q].nucleus.math_type = MATH_TEXT_CHAR;
-        let fetched = fetch(st, MathSlot::Nucleus(q), style.size())?;
+        let fetched = fetch(st, env, MathSlot::Nucleus(q), style.size())?;
         let Some(CharTag::Lig(start)) = fetched.i.map(|i| i.tag) else {
             return Ok(());
         };
@@ -819,11 +855,12 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<
 
 fn make_math_accent(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<AccentNoad>,
     style: MathStyle,
 ) -> Result<(), Abort> {
     let n = q.as_noad();
-    let accent = fetch(st, MathSlot::AccentChr(q), style.size())?;
+    let accent = fetch(st, env, MathSlot::AccentChr(q), style.size())?;
     let f = accent.f;
     let mut c = accent.c;
     let area = st.fonts.font_area[f];
@@ -837,9 +874,9 @@ fn make_math_accent(
         let attach = if bottom_accent {
             None
         } else {
-            Some(compute_ot_math_accent_pos(st, q, style)?)
+            Some(compute_ot_math_accent_pos(st, env, q, style)?)
         };
-        x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
+        x = clean_box(st, env, st.mem[n].nucleus, style.cramped())?;
         s = match attach {
             None => Scaled::ZERO,
             Some(AccentAttach::At(pos)) => pos,
@@ -848,10 +885,10 @@ fn make_math_accent(
         };
     } else if let Some(mut acc_i) = accent.i {
         if st.mem[n].nucleus.math_type == MATH_CHAR {
-            let nucleus = fetch(st, MathSlot::Nucleus(n), style.size())?;
+            let nucleus = fetch(st, env, MathSlot::Nucleus(n), style.size())?;
             s = tfm_skew(st, &nucleus)?;
         }
-        x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
+        x = clean_box(st, env, st.mem[n].nucleus, style.cramped())?;
         let w = st.mem[x].width;
         while let CharTag::List(larger) = acc_i.tag {
             let larger = i32::from(larger);
@@ -895,14 +932,14 @@ fn make_math_accent(
         }
         mem[n].nucleus.math_type = SUB_MLIST;
         mem[n].nucleus.set_info(base.ptr());
-        x = clean_box(st, st.mem[n].nucleus, style)?;
+        x = clean_box(st, env, st.mem[n].nucleus, style)?;
         delta += st.mem[x].height - h;
         h = st.mem[x].height;
     }
 
     let y;
     if is_native {
-        let old = new_native_character(st, f, c as u32)?;
+        let old = new_native_character(st, env, f, c as u32)?;
         y = st.mem.native_char_box(old)?;
         let glyph = NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
         let glyph_id = st.mem.get_native_glyph(old, 0);
@@ -984,7 +1021,7 @@ fn make_math_accent(
     st.mem[y].width = Scaled::ZERO;
     let v = if bottom_accent {
         st.mem[x].link = y.ptr();
-        let v = vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+        let v = vpackage(st, env, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let v_height = st.mem[v].height;
         st.mem[v].shift_amount = -(h - v_height);
         v
@@ -992,7 +1029,7 @@ fn make_math_accent(
         let kern = st.mem.new_kern(-delta)?;
         st.mem[kern].link = x.ptr();
         st.mem[y].link = kern.ptr();
-        let v = vpackage(st, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+        let v = vpackage(st, env, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let mem = &mut st.mem;
         if mem[v].height < h {
             let kern = mem.new_kern(h - mem[v].height)?;
@@ -1011,6 +1048,7 @@ fn make_math_accent(
 
 fn make_left_right(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<FenceNoad>,
     style: MathStyle,
     max_d: Scaled,
@@ -1023,7 +1061,7 @@ fn make_left_right(
     let delta2 = max_d + axis_height;
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
-    let delimiter = var_delimiter(st, st.mem[q].delimiter, size, delta)?;
+    let delimiter = var_delimiter(st, env, st.mem[q].delimiter, size, delta)?;
     st.mem[q.any()].new_hlist = delimiter.ptr();
     Ok(if st.mem[q].noad_type == NodeType::LeftNoad {
         NodeType::OpenNoad
@@ -1138,17 +1176,18 @@ fn mlist_advance(
 
 fn mlist_nucleus(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     qn: NodePtr<Noad>,
     mut delta: Scaled,
     style: MathStyle,
 ) -> Result<(), Abort> {
     let p = match st.mem[qn].nucleus.math_type {
         MATH_CHAR | MATH_TEXT_CHAR => {
-            let fetched = fetch(st, MathSlot::Nucleus(qn), style.size())?;
+            let fetched = fetch(st, env, MathSlot::Nucleus(qn), style.size())?;
             let cur_f = fetched.f;
             let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-                let z = new_native_character(st, cur_f, fetched.c as u32)?;
+                let z = new_native_character(st, env, cur_f, fetched.c as u32)?;
                 let glyph =
                     NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
                 let z_glyph = st.mem.get_native_glyph(z, 0);
@@ -1169,7 +1208,7 @@ fn mlist_nucleus(
             } else if let Some(i) = fetched.i {
                 delta = i.italic;
                 let cc = fetched.c as u16;
-                let p = new_character(st, cur_f, cc)?;
+                let p = new_character(st, env, cur_f, cc)?;
                 let p = p.and_then(NewChar::ptr);
                 if st.mem[qn].nucleus.math_type == MATH_TEXT_CHAR
                     && st.fonts.param(cur_f, SPACE_CODE) != Scaled::ZERO
@@ -1194,15 +1233,15 @@ fn mlist_nucleus(
         SUB_BOX => st.mem[qn].nucleus.info(),
         SUB_MLIST => {
             let mlist = st.mem[qn].nucleus.info();
-            let list = mlist_to_hlist(st, mlist, style, false)?;
-            hpack(st, list, PackSpec::NATURAL)?.ptr()
+            let list = mlist_to_hlist(st, env, mlist, style, false)?;
+            hpack(st, env, list, PackSpec::NATURAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
     st.mem[qn.any()].new_hlist = p;
     let need_scripts = st.mem[qn].subscr.math_type != EMPTY || st.mem[qn].supscr.math_type != EMPTY;
     if need_scripts {
-        make_scripts(st, qn, delta, style)?;
+        make_scripts(st, env, qn, delta, style)?;
     }
 
     Ok(())
@@ -1222,12 +1261,13 @@ const MATH_SPACING: [&[u8; 8]; 8] = [
 
 fn check_noad_dimensions(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     qn: NodePtr<AnyNoad>,
     max_h: &mut Scaled,
     max_d: &mut Scaled,
 ) -> Result<(), Abort> {
     let list = st.mem[qn].new_hlist;
-    let z_box = hpack(st, list, PackSpec::NATURAL)?;
+    let z_box = hpack(st, env, list, PackSpec::NATURAL)?;
     st.mem.mlist_track_box(z_box, max_h, max_d);
     Ok(())
 }
@@ -1237,6 +1277,7 @@ fn check_noad_dimensions(
 /// hlist, which starts after `TEMP_HEAD`.
 pub(super) fn mlist_to_hlist(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     mlist: MemPtr,
     start_style: MathStyle,
     penalties: bool,
@@ -1262,15 +1303,15 @@ pub(super) fn mlist_to_hlist(
             match st.mem.classify(here) {
                 Ok(AnyNode::Noad(qn)) => match qn.variant(&st.mem) {
                     NoadVariant::Fraction(f) => {
-                        make_fraction(st, f, style)?;
+                        make_fraction(st, env, f, style)?;
                         break 'reswitch FirstPass::CheckDimensions(qn);
                     }
                     NoadVariant::Radical(rad) => {
-                        make_radical(st, rad, style)?;
+                        make_radical(st, env, rad, style)?;
                         break 'reswitch FirstPass::ProcessNucleus(rad.as_noad());
                     }
                     NoadVariant::Accent(acc) => {
-                        make_math_accent(st, acc, style)?;
+                        make_math_accent(st, env, acc, style)?;
                         break 'reswitch FirstPass::ProcessNucleus(acc.as_noad());
                     }
                     NoadVariant::Fence(f) => {
@@ -1306,25 +1347,25 @@ pub(super) fn mlist_to_hlist(
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OpNoad) => {
-                            delta = make_op(st, n, style)?;
+                            delta = make_op(st, env, n, style)?;
                             if st.mem[n].limits() == LimitCode::Limits {
                                 break 'reswitch FirstPass::CheckDimensions(qn);
                             }
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OrdNoad) => {
-                            make_ord(st, n, style)?;
+                            make_ord(st, env, n, style)?;
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OpenNoad | NodeType::InnerNoad) => {
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OverNoad) => {
-                            make_over(st, n, style)?;
+                            make_over(st, env, n, style)?;
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::UnderNoad) => {
-                            make_under(st, n, style)?;
+                            make_under(st, env, n, style)?;
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::VcenterNoad) => {
@@ -1387,12 +1428,12 @@ pub(super) fn mlist_to_hlist(
             }
             FirstPass::DoneWithNoad(qn) => qn,
             FirstPass::ProcessNucleus(n) => {
-                mlist_nucleus(st, n, delta, style)?;
-                check_noad_dimensions(st, n.any(), &mut max_h, &mut max_d)?;
+                mlist_nucleus(st, env, n, delta, style)?;
+                check_noad_dimensions(st, env, n.any(), &mut max_h, &mut max_d)?;
                 n.any()
             }
             FirstPass::CheckDimensions(qn) => {
-                check_noad_dimensions(st, qn, &mut max_h, &mut max_d)?;
+                check_noad_dimensions(st, env, qn, &mut max_h, &mut max_d)?;
                 qn
             }
         };
@@ -1453,7 +1494,7 @@ pub(super) fn mlist_to_hlist(
                     }
                     NoadVariant::Fence(f) => {
                         style = start_style;
-                        t = make_left_right(st, f, start_style, max_d, max_h)?.to_u16();
+                        t = make_left_right(st, env, f, start_style, max_d, max_h)?.to_u16();
                     }
                 }
                 SecondPass::Splice(qn)
@@ -1598,18 +1639,19 @@ enum AccentAttach {
 
 fn compute_ot_math_accent_pos(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     mut p: NodePtr<AccentNoad>,
     style: MathStyle,
 ) -> Result<AccentAttach, Abort> {
     loop {
         match st.mem[p].base.nucleus.math_type {
             MATH_CHAR => {
-                let nucleus = fetch(st, MathSlot::Nucleus(p.as_noad()), style.size())?;
+                let nucleus = fetch(st, env, MathSlot::Nucleus(p.as_noad()), style.size())?;
                 // XeTeX takes the nucleus for a native character and aborts (upstream bug 24).
                 if !st.fonts.is_native_font(nucleus.f) {
                     return Ok(AccentAttach::Skew(tfm_skew(st, &nucleus)?));
                 }
-                let q = new_native_character(st, nucleus.f, nucleus.c as u32)?;
+                let q = new_native_character(st, env, nucleus.f, nucleus.c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
                 let pos = st.fonts.get_ot_math_accent_pos(nucleus.f, i32::from(g));
                 return Ok(if pos == INFINITE_DIMEN {

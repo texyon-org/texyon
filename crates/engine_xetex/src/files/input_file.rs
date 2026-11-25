@@ -1,11 +1,13 @@
 //! Open input files: where their bytes come from and how they decode.
 
+use std::io::SeekFrom;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use texyon_bridge_core::{EOF, InputId};
+use texyon_bridge_core::EOF;
+use texyon_io_base::InputHandle;
 
-use crate::ffi::bridge::{disk_close, disk_read, disk_rewind};
+use crate::env::EngineEnv;
 use crate::ffi::teckit_icu::with_c_str;
 use crate::preview::replay::adapter::{self, MemoryInputId};
 
@@ -13,19 +15,62 @@ use crate::preview::replay::adapter::{self, MemoryInputId};
 const DISK_CHUNK: usize = 16 * 1024;
 
 /// Where an open input's bytes come from.
-#[derive(Clone, Copy)]
 pub(crate) enum InputSource {
-    Disk(InputId),
+    Disk(InputHandle),
     /// A file of the installed source snapshot.
     Memory(MemoryInputId),
 }
 
 impl InputSource {
-    /// The source behind a bridge or replay handle, `None` for the invalid handle.
-    pub(crate) fn from_handle(handle: usize) -> Option<Self> {
-        match MemoryInputId::from_handle(handle) {
-            Some(id) => Some(InputSource::Memory(id)),
-            None => InputId::from_raw(handle).map(InputSource::Disk),
+    /// The file's size in bytes.
+    pub(crate) fn size(&mut self, env: &mut EngineEnv) -> usize {
+        match self {
+            InputSource::Disk(handle) => env.host.input_size(handle),
+            InputSource::Memory(id) => adapter::get_size(*id),
+        }
+    }
+
+    /// The file's modification time, 0 for a snapshot file.
+    pub(crate) fn mtime(&mut self, env: &mut EngineEnv) -> i64 {
+        match self {
+            InputSource::Disk(handle) => env.host.input_mtime(handle),
+            InputSource::Memory(_) => 0,
+        }
+    }
+
+    /// Moves to byte `offset`.
+    pub(crate) fn seek(&mut self, env: &mut EngineEnv, offset: u64) {
+        match self {
+            InputSource::Disk(handle) => {
+                env.host.seek_input(handle, SeekFrom::Start(offset));
+            }
+            InputSource::Memory(id) => {
+                adapter::seek(*id, usize::try_from(offset).unwrap_or(usize::MAX));
+            }
+        }
+    }
+
+    /// Fills `buf`, returning whether it was filled.
+    #[must_use]
+    pub(crate) fn read_exact(&mut self, env: &mut EngineEnv, buf: &mut [u8]) -> bool {
+        match self {
+            InputSource::Disk(handle) => env.host.read_input(handle, buf).is_ok(),
+            InputSource::Memory(id) => adapter::read(*id, buf),
+        }
+    }
+
+    /// The whole rest of the file, `None` if it could not be read.
+    pub(crate) fn read_to_end(&mut self, env: &mut EngineEnv) -> Option<Vec<u8>> {
+        let mut bytes = vec![0; self.size(env)];
+        self.read_exact(env, &mut bytes).then_some(bytes)
+    }
+
+    /// Closes the file. Returns `true` on a serious internal close error.
+    #[must_use]
+    pub(crate) fn close(self, env: &mut EngineEnv) -> bool {
+        match self {
+            InputSource::Disk(handle) => env.host.close_input(handle),
+            InputSource::Memory(id) => adapter::close(id),
         }
     }
 }
@@ -168,19 +213,28 @@ impl InputFile {
 
     /// The next byte, or `EOF`.
     #[inline]
-    pub(crate) fn getc(&mut self) -> i32 {
+    pub(crate) fn getc(&mut self, env: &mut EngineEnv) -> i32 {
         match self.bytes.get(self.pos) {
             Some(&byte) => {
                 self.pos += 1;
                 i32::from(byte)
             }
-            None => self.getc_after_refill(),
+            None => self.getc_after_refill(env),
         }
     }
 
     #[cold]
-    fn getc_after_refill(&mut self) -> i32 {
-        if self.refill() { self.getc() } else { EOF }
+    fn getc_after_refill(&mut self, env: &mut EngineEnv) -> i32 {
+        if self.refill(env) {
+            self.getc(env)
+        } else {
+            EOF
+        }
+    }
+
+    /// The source of a file nothing has been read from yet.
+    pub(crate) fn into_source(self) -> InputSource {
+        self.source
     }
 
     /// Steps back over the byte the last [`Self::getc`] returned.
@@ -188,12 +242,12 @@ impl InputFile {
         self.pos -= 1;
     }
 
-    fn refill(&mut self) -> bool {
+    fn refill(&mut self, env: &mut EngineEnv) -> bool {
         self.reached = self.reached.max(self.pos);
-        match self.source {
-            InputSource::Disk(id) => {
+        match &mut self.source {
+            InputSource::Disk(handle) => {
                 let mut chunk = vec![0; DISK_CHUNK];
-                let n = disk_read(id, &mut chunk);
+                let n = env.host.read_input_some(handle, &mut chunk);
                 chunk.truncate(n);
                 self.offset += self.bytes.len();
                 self.bytes = Arc::from(chunk);
@@ -205,7 +259,7 @@ impl InputFile {
                 if self.loaded {
                     return false;
                 }
-                let (bytes, position) = adapter::contents(id);
+                let (bytes, position) = adapter::contents(*id);
                 self.bytes = bytes;
                 self.pos = position;
                 self.reached = position;
@@ -216,14 +270,14 @@ impl InputFile {
     }
 
     /// Goes back to the start of the file, as after a seek to 0.
-    pub(crate) fn rewind(&mut self) {
+    pub(crate) fn rewind(&mut self, env: &mut EngineEnv) {
         self.reached = self.reached.max(self.pos);
         if self.offset == 0 {
             self.pos = 0;
             return;
         }
-        if let InputSource::Disk(id) = self.source {
-            disk_rewind(id);
+        if let InputSource::Disk(handle) = &mut self.source {
+            env.host.seek_input(handle, SeekFrom::Start(0));
             self.bytes = Arc::from([]);
             self.pos = 0;
             self.reached = 0;
@@ -243,12 +297,10 @@ impl InputFile {
     }
 
     /// Closes the file. Returns `true` on a serious internal close error.
-    pub(crate) fn close(mut self) -> bool {
+    #[must_use]
+    pub(crate) fn close(mut self, env: &mut EngineEnv) -> bool {
         self.sync();
-        match self.source {
-            InputSource::Disk(id) => disk_close(id),
-            InputSource::Memory(id) => adapter::close_memory(id),
-        }
+        self.source.close(env)
     }
 
     /// The fence checkpoint of a snapshot input decoded by the engine itself.

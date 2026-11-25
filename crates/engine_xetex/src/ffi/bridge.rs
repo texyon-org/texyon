@@ -1,69 +1,25 @@
-//! Engine-side I/O and diagnostics over the run's `CoreBridgeState`.
+//! Engine-side I/O and diagnostics through the operation's [`EngineEnv`].
 //!
-//! Handles are raw `usize` values with 0 meaning invalid. Replay sources
-//! answer first, everything else goes to the state installed by [`enter`].
+//! Replay sources answer opens first, everything else goes to the env's host.
 
 use std::borrow::Cow;
 use std::ffi::CStr;
-use std::io::SeekFrom;
-use std::marker::PhantomData;
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
 
-use texyon_bridge_core::{CoreBridgeState, FoundAs, InputId, OutputId};
-pub(crate) use texyon_bridge_core::{Diagnostic, FileFormat};
+pub(crate) use texyon_bridge_core::{CoreBridgeState, Diagnostic, FileFormat, FoundAs};
 
+use crate::env::EngineEnv;
+use crate::files::input_file::InputSource;
 use crate::preview::replay::adapter::{
-    clear_last_path, close, get_size, holds_directory, is_mem, last_abspath, open_named,
-    open_primary, opened_last, read, record_written, seek,
+    holds_directory, last_abspath, open_named, open_primary, record_written,
 };
 
-/// The bridge state of the current run. Every run holds the engine lock, so
-/// one slot serves all threads.
-static BRIDGE: AtomicPtr<CoreBridgeState<'static, 'static>> = AtomicPtr::new(ptr::null_mut());
-
-pub(crate) struct BridgeScope<'a> {
-    previous: *mut CoreBridgeState<'static, 'static>,
-    _borrow: PhantomData<&'a mut ()>,
-}
-
-pub(crate) fn enter<'a>(api: &'a mut CoreBridgeState<'_, '_>) -> BridgeScope<'a> {
-    let api = (api as *mut CoreBridgeState<'_, '_>).cast::<CoreBridgeState<'static, 'static>>();
-    BridgeScope {
-        previous: BRIDGE.swap(api, Ordering::Relaxed),
-        _borrow: PhantomData,
-    }
-}
-
-impl Drop for BridgeScope<'_> {
-    fn drop(&mut self) {
-        BRIDGE.store(self.previous, Ordering::Relaxed);
-    }
-}
-
-#[inline]
-pub(crate) fn with_bridge<R>(f: impl FnOnce(&mut CoreBridgeState<'_, '_>) -> R) -> R {
-    // SAFETY: a live `BridgeScope` holds the exclusive borrow behind the pointer,
-    // the engine is single-threaded and `f` never re-enters, so this borrow is unique.
-    let es = unsafe { BRIDGE.load(Ordering::Relaxed).as_mut() };
-    f(es.expect("bridge state used outside a run"))
-}
-
-/// Runs `f`, a call into C code that does its I/O through bridge-core's C
-/// global state, with that state set to the current run's.
-pub(crate) fn with_c_io<R>(f: impl FnOnce() -> R) -> R {
-    with_bridge(|es| {
-        let _global = es.enter_global_engine();
-        f()
-    })
-}
-
-fn input_id(handle: usize) -> InputId {
-    InputId::from_raw(handle).expect("valid input handle")
-}
-
-fn output_id(handle: usize) -> OutputId {
-    OutputId::from_raw(handle).expect("valid output handle")
+/// Runs `f` with a bridge state over the env's host, for code that names
+/// files by id. Files it leaves open are dropped with the state.
+pub(crate) fn with_bridge_state<R>(
+    env: &mut EngineEnv,
+    f: impl FnOnce(&mut CoreBridgeState<'_, '_>) -> R,
+) -> R {
+    f(&mut CoreBridgeState::new(&mut env.host))
 }
 
 /// `bytes` as bridge-core saw them through a C string: empty when they hold a NUL.
@@ -75,131 +31,99 @@ fn c_view(bytes: &[u8]) -> Cow<'_, str> {
     }
 }
 
-/// Opens input file `path`, or returns 0.
-pub(crate) fn input_open(path: &[u8], format: FileFormat, is_gz: bool) -> usize {
-    let path = String::from_utf8_lossy(path);
-    if let Some(handle) = open_named(&path, format) {
-        return handle;
-    }
-    clear_last_path();
-    InputId::to_raw(with_bridge(|es| es.input_open(&path, format, is_gz)))
-}
-
-pub(crate) fn input_open_primary() -> usize {
-    if let Some(handle) = open_primary() {
-        return handle;
-    }
-    clear_last_path();
-    InputId::to_raw(with_bridge(|es| es.input_open_primary()))
-}
-
-pub(crate) fn last_input_found() -> FoundAs {
-    if opened_last() {
-        return FoundAs::Asked;
-    }
-    with_bridge(|es| es.latest_input_found().clone())
+/// An input the engine opened, with how it was found.
+pub(crate) struct OpenedSource {
+    pub source: InputSource,
+    pub found: FoundAs,
+    /// Its absolute path for SyncTeX, empty when not known or not exposed.
+    pub abspath: Vec<u8>,
 }
 
 /// Longest absolute input path kept, including C's terminating NUL.
 const ABSPATH_CAPACITY: usize = 1024;
 
-pub(crate) fn last_input_abspath() -> Vec<u8> {
-    if let Some(path) = last_abspath(ABSPATH_CAPACITY - 1) {
-        return path;
+fn memory_opened(source: InputSource) -> OpenedSource {
+    OpenedSource {
+        source,
+        found: FoundAs::Asked,
+        abspath: last_abspath(ABSPATH_CAPACITY - 1).unwrap_or_default(),
     }
-    with_bridge(|es| match es.latest_input_abspath() {
+}
+
+fn disk_opened(env: &mut EngineEnv, opened: texyon_bridge_core::OpenedInput) -> OpenedSource {
+    let abspath = match env.host.exposed_path(opened.path.as_deref()) {
         Some(path) if path.len() < ABSPATH_CAPACITY => {
             let end = path.find('\0').unwrap_or(path.len());
             path.as_bytes()[..end].to_vec()
         }
         _ => Vec::new(),
-    })
-}
-
-pub(crate) fn input_get_size(handle: usize) -> usize {
-    if let Some(size) = get_size(handle) {
-        return size;
+    };
+    OpenedSource {
+        source: InputSource::Disk(opened.handle),
+        found: opened.found,
+        abspath,
     }
-    with_bridge(|es| es.input_get_size(input_id(handle)))
 }
 
-pub(crate) fn input_get_mtime(handle: usize) -> libc::time_t {
-    if is_mem(handle) {
-        return 0;
+/// Opens input file `path`, from the replay sources if they hold it.
+pub(crate) fn input_open(
+    env: &mut EngineEnv,
+    path: &[u8],
+    format: FileFormat,
+    is_gz: bool,
+) -> Option<OpenedSource> {
+    let path = String::from_utf8_lossy(path);
+    if let Some(id) = open_named(&path, format) {
+        return Some(memory_opened(InputSource::Memory(id)));
     }
-    with_bridge(|es| es.input_get_mtime(input_id(handle))) as libc::time_t
+    let opened = env.host.open_input(&path, format, is_gz)?;
+    Some(disk_opened(env, opened))
 }
 
-/// Reads up to `buf.len()` bytes of `id`. Returns 0 at its end or after a reported failure.
-pub(crate) fn disk_read(id: InputId, buf: &mut [u8]) -> usize {
-    with_bridge(|es| es.input_read_some(id, buf))
-}
-
-pub(crate) fn disk_rewind(id: InputId) {
-    with_bridge(|es| es.input_seek(id, SeekFrom::Start(0)));
-}
-
-/// Returns `true` on a serious internal close error.
-pub(crate) fn disk_close(id: InputId) -> bool {
-    with_bridge(|es| es.input_close(id))
-}
-
-#[must_use]
-pub(crate) fn input_read(handle: usize, buf: &mut [u8]) -> bool {
-    if let Some(value) = read(handle, buf) {
-        return value >= 0;
+/// Opens the primary input.
+pub(crate) fn input_open_primary(env: &mut EngineEnv) -> Option<OpenedSource> {
+    if let Some(id) = open_primary() {
+        return Some(memory_opened(InputSource::Memory(id)));
     }
-    with_bridge(|es| es.input_read(input_id(handle), buf)).is_ok()
-}
-
-pub(crate) fn input_seek(handle: usize, offset: u64) -> usize {
-    if let Some(position) = seek(handle, offset as libc::ssize_t, libc::SEEK_SET) {
-        return position;
-    }
-    with_bridge(|es| es.input_seek(input_id(handle), SeekFrom::Start(offset))) as usize
-}
-
-/// Returns `true` on a serious internal close error.
-#[must_use]
-pub(crate) fn input_close(handle: usize) -> bool {
-    if let Some(error) = close(handle) {
-        return error;
-    }
-    InputId::from_raw(handle).is_some_and(|id| with_bridge(|es| es.input_close(id)))
+    let opened = env.host.open_primary_input()?;
+    Some(disk_opened(env, opened))
 }
 
 /// Opens output file `path`, or returns 0.
-pub(crate) fn output_open(path: &[u8], is_gz: bool) -> usize {
+pub(crate) fn output_open(env: &mut EngineEnv, path: &[u8], is_gz: bool) -> usize {
     let path = String::from_utf8_lossy(path);
     record_written(&path);
-    OutputId::to_raw(with_bridge(|es| es.output_open(&path, is_gz)))
+    let handle = env.host.open_output(&path, is_gz);
+    env.push_output(handle)
 }
 
-pub(crate) fn directory_exists(dir: &[u8]) -> bool {
+pub(crate) fn output_open_stdout(env: &mut EngineEnv) -> usize {
+    let handle = env.host.open_stdout();
+    env.push_output(handle)
+}
+
+pub(crate) fn directory_exists(env: &mut EngineEnv, dir: &[u8]) -> bool {
     let dir = String::from_utf8_lossy(dir);
-    holds_directory(&dir) || with_bridge(|es| es.directory_exists(&dir))
+    holds_directory(&dir) || env.host.directory_exists(&dir)
 }
 
-pub(crate) fn output_open_stdout() -> usize {
-    OutputId::to_raw(with_bridge(|es| es.output_open_stdout()))
+pub(crate) fn output_putc(env: &mut EngineEnv, handle: usize, byte: u8) {
+    env.output_write(handle, &[byte]);
 }
 
-pub(crate) fn output_putc(handle: usize, byte: u8) {
-    with_bridge(|es| es.output_write(output_id(handle), &[byte]));
-}
-
+/// Writes `data` to `handle`, returning whether it was written.
 #[must_use]
-pub(crate) fn output_write(handle: usize, data: &[u8]) -> bool {
-    !with_bridge(|es| es.output_write(output_id(handle), data))
+pub(crate) fn output_write(env: &mut EngineEnv, handle: usize, data: &[u8]) -> bool {
+    !env.output_write(handle, data)
 }
 
-pub(crate) fn output_flush(handle: usize) {
-    with_bridge(|es| es.output_flush(output_id(handle)));
+pub(crate) fn output_flush(env: &mut EngineEnv, handle: usize) {
+    env.output_flush(handle);
 }
 
 /// Closes `handle`, returning `true` on an error.
-pub(crate) fn output_close(handle: usize) -> bool {
-    OutputId::from_raw(handle).is_some_and(|id| with_bridge(|es| es.output_close(id)))
+pub(crate) fn output_close(env: &mut EngineEnv, handle: usize) -> bool {
+    env.output_close(handle)
 }
 
 /// Appends `text`. A text with a NUL appends nothing.
@@ -209,27 +133,29 @@ pub(crate) fn diag_append(diag: &mut Diagnostic, text: &str) {
     }
 }
 
-pub(crate) fn diag_finish(diag: Diagnostic) {
-    with_bridge(|es| es.finish_diagnostic(diag));
+pub(crate) fn diag_finish(env: &mut EngineEnv, diag: Diagnostic) {
+    env.host.finish_diagnostic(diag);
 }
 
 /// Issues `text` as a warning, empty when it holds a NUL.
-pub(crate) fn issue_warning(text: &str) {
-    with_bridge(|es| es.issue_warning(&c_view(text.as_bytes())));
+pub(crate) fn issue_warning(env: &mut EngineEnv, text: &str) {
+    env.host.issue_warning(&c_view(text.as_bytes()));
 }
 
 /// Issues `text` as an error, empty when it holds a NUL.
-pub(crate) fn issue_error(text: &str) {
-    with_bridge(|es| es.issue_error(&c_view(text.as_bytes())));
+pub(crate) fn issue_error(env: &mut EngineEnv, text: &str) {
+    env.host.issue_error(&c_view(text.as_bytes()));
 }
 
-pub(crate) fn shell_escape(cmd: &[u16]) {
-    with_bridge(|es| match String::from_utf16(cmd) {
+pub(crate) fn shell_escape(env: &mut EngineEnv, cmd: &[u16]) {
+    match String::from_utf16(cmd) {
         Ok(cmd) => {
-            es.shell_escape(&cmd);
+            env.host.shell_escape(&cmd);
         }
-        Err(err) => es.issue_error(&format!("command was not valid UTF-16: {err}")),
-    });
+        Err(err) => env
+            .host
+            .issue_error(&format!("command was not valid UTF-16: {err}")),
+    }
 }
 
 pub(crate) fn strerror(errnum: i32) -> Vec<u8> {
@@ -239,9 +165,9 @@ pub(crate) fn strerror(errnum: i32) -> Vec<u8> {
         .to_vec()
 }
 
-pub(crate) fn get_file_md5(path: &[u8]) -> Option<[u8; 16]> {
+pub(crate) fn get_file_md5(env: &mut EngineEnv, path: &[u8]) -> Option<[u8; 16]> {
     let mut digest = [0; 16];
-    let failed = with_bridge(|es| es.get_file_md5(&c_view(path), &mut digest));
+    let failed = env.host.get_file_md5(&c_view(path), &mut digest);
     (!failed).then_some(digest)
 }
 

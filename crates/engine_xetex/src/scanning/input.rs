@@ -10,6 +10,7 @@ use crate::base::params::{IntPar, TokPar};
 use crate::base::stack::TexStack;
 use crate::base::token::{TokCursor, Token, TokenList};
 use crate::base::units::{BufPos, MemPtr, SavePtr, StrNumber};
+use crate::env::EngineEnv;
 use crate::files::input_file::InputFile;
 use crate::files::io::u_close;
 use crate::memory::mem::MemState;
@@ -240,7 +241,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn end_file_reading(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.open_levels[usize::from(st.input.cur_input.index)].outer_line;
     match st.input.cur_input.name {
@@ -248,7 +249,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
         InputName::File(_) => {
             let idx = st.input.cur_input.index as usize;
             let slot = mem::take(&mut st.input.input_file[idx]);
-            if u_close(slot) {
+            if u_close(env, slot) {
                 return Err(Abort::InputClose);
             }
         }
@@ -357,6 +358,7 @@ pub(crate) fn level_start(st: &EngineState, ci: &InputState) -> TokCursor {
 
 pub(crate) fn begin_token_list(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     list: TokenList,
     t: TokenType,
 ) -> Result<(), Abort> {
@@ -383,18 +385,18 @@ pub(crate) fn begin_token_list(
     }
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         begin_diagnostic(st);
-        print_nl(st, "");
+        print_nl(st, env, "");
         match t {
-            TokenType::Mark => print_esc(st, "mark"),
-            TokenType::Write => print_esc(st, "write"),
+            TokenType::Mark => print_esc(st, env, "mark"),
+            TokenType::Write => print_esc(st, env, "write"),
             _ => match t.tok_par() {
-                Some(par) => print_command(st, Command::AssignToks(par.loc())),
-                None => print_esc(st, TokPar::ErrHelp.name()),
+                Some(par) => print_command(st, env, Command::AssignToks(par.loc())),
+                None => print_esc(st, env, TokPar::ErrHelp.name()),
             },
         }
-        print(st, "->");
-        token_show(st, list);
-        end_diagnostic(st, false);
+        print(st, env, "->");
+        token_show(st, env, list);
+        end_diagnostic(st, env, false);
     }
     Ok(())
 }

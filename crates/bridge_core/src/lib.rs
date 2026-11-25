@@ -282,7 +282,8 @@ impl EngineAbortedError {
         }
     }
 
-    fn new_with_details() -> Self {
+    /// The error with the message the engine's abort left.
+    pub fn new_with_details() -> Self {
         // SAFETY: This is always safe to call
         let ptr = unsafe { _ttbc_get_error_message() };
         // SAFETY: The pointer returned above will always have a null-terminated C-string in it

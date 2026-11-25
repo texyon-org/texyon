@@ -22,6 +22,7 @@ use crate::base::units::{NodeType, Scaled};
 use crate::build::main_control::BoxContext;
 use crate::build::packaging::PackSpec;
 use crate::build::pagebuilder::PageContents;
+use crate::env::EngineEnv;
 use crate::ffi::bridge::output_flush;
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, NodePtr, PageInsNode};
@@ -31,35 +32,35 @@ use crate::shipout::ensure_write_stream_open;
 use crate::state::EngineState;
 use crate::tables::save::{GroupCode, Saved};
 
-pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
+pub(crate) fn show_cur_cmd_chr(st: &mut EngineState, env: &mut EngineEnv) {
     begin_diagnostic(st);
-    print_nl(st, b'{');
+    print_nl(st, env, b'{');
     let mode = st.input.cur_list.mode.name();
     if mode != st.scanner.shown_mode {
-        print_mode(st, mode);
-        print(st, ": ");
+        print_mode(st, env, mode);
+        print(st, env, ": ");
         st.scanner.shown_mode = mode;
     }
-    print_command(st, st.scanner.cur);
+    print_command(st, env, st.scanner.cur);
     if st.eqtb.int_par(IntPar::TracingIfs) > 0
         && (Cmd::IfTest..=Cmd::FiOrElse).contains(&st.scanner.cur.cmd())
     {
-        print(st, ": ");
+        print(st, env, ": ");
         let (mut n, l) = if st.scanner.cur.cmd() == Cmd::FiOrElse {
-            print_command(st, Command::IfTest(st.scanner.cur_if));
-            print_char(st, b' ');
+            print_command(st, env, Command::IfTest(st.scanner.cur_if));
+            print_char(st, env, b' ');
             (0, st.scanner.if_line)
         } else {
             (1, st.mem.line)
         };
         n += i32::try_from(st.scanner.conds.depth()).unwrap_or(i32::MAX);
-        print(st, "(level ");
-        print_int(st, n);
-        print_char(st, b')');
-        print_if_line(st, l);
+        print(st, env, "(level ");
+        print_int(st, env, n);
+        print_char(st, env, b')');
+        print_if_line(st, env, l);
     }
-    print_char(st, b'}');
-    end_diagnostic(st, false);
+    print_char(st, env, b'}');
+    end_diagnostic(st, env, false);
 }
 
 /// Records where the error context splits, when printing reaches the current position.
@@ -70,7 +71,13 @@ fn set_trick_count(st: &mut EngineState) {
 }
 
 /// Shows the tokens from `p`, marking where `q` starts for `show_context`'s two-line display.
-pub(crate) fn show_token_list(st: &mut EngineState, p: impl Into<TokCursor>, q: TokCursor, l: i32) {
+pub(crate) fn show_token_list(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    p: impl Into<TokCursor>,
+    q: TokCursor,
+    l: i32,
+) {
     let mut p = p.into();
     let mut shown = ShownTokens::default();
     st.errors.tally = 0;
@@ -79,30 +86,30 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl Into<TokCursor>, q: 
             set_trick_count(st);
         }
         if !st.mem.tokens.holds(p) {
-            print_esc(st, "CLOBBERED.");
+            print_esc(st, env, "CLOBBERED.");
             return;
         }
         let Some(w) = st.mem.tokens.read(&mut p) else {
             break;
         };
-        if !shown.show(st, w) {
+        if !shown.show(st, env, w) {
             return;
         }
     }
     if !p.is_end() {
-        print_esc(st, "ETC.");
+        print_esc(st, env, "ETC.");
     }
 }
 
-pub(crate) fn show_tokens(st: &mut EngineState, tokens: &[Token], l: i32) {
+pub(crate) fn show_tokens(st: &mut EngineState, env: &mut EngineEnv, tokens: &[Token], l: i32) {
     let mut shown = ShownTokens::default();
     st.errors.tally = 0;
     for &w in tokens {
         if st.errors.tally >= l {
-            print_esc(st, "ETC.");
+            print_esc(st, env, "ETC.");
             return;
         }
-        if !shown.show(st, w) {
+        if !shown.show(st, env, w) {
             return;
         }
     }
@@ -123,10 +130,10 @@ impl Default for ShownTokens {
 }
 
 impl ShownTokens {
-    fn show(&mut self, st: &mut EngineState, w: Token) -> bool {
+    fn show(&mut self, st: &mut EngineState, env: &mut EngineEnv, w: Token) -> bool {
         match w.kind() {
-            TokenKind::Cs(cs) => print_cs(st, Some(cs)),
-            _ if w.0 < 0 => print_esc(st, "BAD."),
+            TokenKind::Cs(cs) => print_cs(st, env, Some(cs)),
+            _ if w.0 < 0 => print_esc(st, env, "BAD."),
             TokenKind::Char(cmd, c) => match cmd {
                 Cmd::LeftBrace
                 | Cmd::RightBrace
@@ -136,60 +143,64 @@ impl ShownTokens {
                 | Cmd::SubMark
                 | Cmd::Spacer
                 | Cmd::Letter
-                | Cmd::OtherChar => print_char(st, c),
+                | Cmd::OtherChar => print_char(st, env, c),
                 Cmd::MacParam => {
-                    print_char(st, c);
-                    print_char(st, c);
+                    print_char(st, env, c);
+                    print_char(st, env, c);
                 }
                 Cmd::OUT_PARAM => {
-                    print_char(st, self.match_chr);
+                    print_char(st, env, self.match_chr);
                     if c > 9 {
-                        print_char(st, b'!');
+                        print_char(st, env, b'!');
                         return false;
                     }
-                    print_char(st, i32::from(b'0') + c);
+                    print_char(st, env, i32::from(b'0') + c);
                 }
                 Cmd::MATCH => {
                     self.match_chr = c;
-                    print_char(st, c);
+                    print_char(st, env, c);
                     self.n += 1;
-                    print_char(st, self.n);
+                    print_char(st, env, self.n);
                     if self.n > i32::from(b'9') {
                         return false;
                     }
                 }
                 Cmd::END_MATCH => {
                     if c == 0 {
-                        print(st, "->");
+                        print(st, env, "->");
                     }
                 }
-                _ => print_esc(st, "BAD."),
+                _ => print_esc(st, env, "BAD."),
             },
         }
         true
     }
 }
 
-fn print_totals(st: &mut EngineState) {
-    print_scaled(st, st.shipout.page_so_far[1]);
+fn print_totals(st: &mut EngineState, env: &mut EngineEnv) {
+    print_scaled(st, env, st.shipout.page_so_far[1]);
     for (i, order) in [(2, ""), (3, "fil"), (4, "fill"), (5, "filll")] {
         if st.shipout.page_so_far[i] != Scaled::ZERO {
-            print(st, " plus ");
-            print_scaled(st, st.shipout.page_so_far[i]);
-            print(st, order);
+            print(st, env, " plus ");
+            print_scaled(st, env, st.shipout.page_so_far[i]);
+            print(st, env, order);
         }
     }
     if st.shipout.page_so_far[6] != Scaled::ZERO {
-        print(st, " minus ");
-        print_scaled(st, st.shipout.page_so_far[6]);
+        print(st, env, " minus ");
+        print_scaled(st, env, st.shipout.page_so_far[6]);
     }
 }
 
-pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {
-    let text = scan_toks(st, false, true)?;
+pub(crate) fn issue_message(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    err: bool,
+) -> Result<(), Abort> {
+    let text = scan_toks(st, env, false, true)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    token_show(st, text);
+    token_show(st, env, text);
     st.shipout.selector = old_setting;
     st.mem.tokens.flush(text);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
@@ -199,14 +210,14 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
     if !err {
         let len = st.strings.length(s);
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
-            print_ln(st);
+            print_ln(st, env);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            print_char(st, b' ');
+            print_char(st, env, b' ');
         }
-        begin_capture(st, DiagnosticKind::Written);
-        print(st, s);
-        end_capture(st);
-        output_flush(st.shipout.rust_stdout);
+        begin_capture(st, env, DiagnosticKind::Written);
+        print(st, env, s);
+        end_capture(st, env);
+        output_flush(env, st.shipout.rust_stdout);
     } else {
         let help: &[&'static str] = if !st.eqtb.tok_par(TokPar::ErrHelp).is_null() {
             &[]
@@ -223,13 +234,13 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
                 "and deduce the truth by order and method.",
             ]
         };
-        errmessage(st, s, help)?;
+        errmessage(st, env, s, help)?;
     }
     st.strings.flush_string();
     Ok(())
 }
 
-pub(crate) fn show_save_groups(st: &mut EngineState) {
+pub(crate) fn show_save_groups(st: &mut EngineState, env: &mut EngineEnv) {
     // Where the tex.web `found1`/`found2`/`found` label chain is entered.
     enum Entry {
         BoxContext,
@@ -246,12 +257,12 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
     st.save_stack.cur_level -= 1;
     let mut a: i8 = 1;
 
-    print_nl(st, "");
-    print_ln(st);
+    print_nl(st, env, "");
+    print_ln(st, env);
 
     loop {
-        print_nl(st, "### ");
-        print_group(st, true);
+        print_nl(st, env, "### ");
+        print_group(st, env, true);
         if st.save_stack.cur_group == GroupCode::BottomLevel {
             break;
         }
@@ -269,7 +280,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
         };
 
-        print(st, " (");
+        print(st, env, " (");
 
         let mut s: &str = "";
         let entry = match st.save_stack.cur_group {
@@ -300,9 +311,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
             GroupCode::Align => {
                 if a == 1 {
-                    print(st, "align entry");
+                    print(st, env, "align entry");
                 } else {
-                    print_esc(st, "cr");
+                    print_esc(st, env, "cr");
                 }
                 match a {
                     1 if p >= 1 => p -= 1,
@@ -315,19 +326,19 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::NoAlign => {
                 p += 1;
                 a = -1;
-                print_esc(st, "noalign");
+                print_esc(st, env, "noalign");
                 Entry::Found2
             }
             GroupCode::Output => {
-                print_esc(st, "output");
+                print_esc(st, env, "output");
                 Entry::Found
             }
             GroupCode::Math => Entry::Found2,
             GroupCode::Disc | GroupCode::MathChoice => {
                 if st.save_stack.cur_group == GroupCode::Disc {
-                    print_esc(st, "discretionary");
+                    print_esc(st, env, "discretionary");
                 } else {
-                    print_esc(st, "mathchoice");
+                    print_esc(st, env, "mathchoice");
                 }
                 let braces = match st.save_stack.kept(1) {
                     Some(Saved::DiscPart(n) | Saved::ChoicePart(n)) => n,
@@ -335,7 +346,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 };
                 for i in 1..=3 {
                     if i <= braces {
-                        print(st, "{}");
+                        print(st, env, "{}");
                     }
                 }
                 Entry::Found2
@@ -346,13 +357,13 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     _ => (0, false),
                 };
                 if n == 255 {
-                    print_esc(st, "vadjust");
+                    print_esc(st, env, "vadjust");
                     if pre {
-                        print(st, " pre");
+                        print(st, env, " pre");
                     }
                 } else {
-                    print_esc(st, "insert");
-                    print_int(st, n);
+                    print_esc(st, env, "insert");
+                    print_int(st, env, n);
                 }
                 Entry::Found2
             }
@@ -362,31 +373,31 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
             GroupCode::SemiSimple => {
                 p += 1;
-                print_esc(st, "begingroup");
+                print_esc(st, env, "begingroup");
                 Entry::Found
             }
             GroupCode::MathShift => {
                 if m == ModeName::DisplayMath {
-                    print_char(st, b'$');
+                    print_char(st, env, b'$');
                 } else if st.input.nest.stale_slot(p).mode.name() == ModeName::DisplayMath {
                     let left = matches!(st.save_stack.kept(1), Some(Saved::EqNo { left: true }));
-                    print_command(st, Command::EqNo { left });
-                    print_char(st, b')');
+                    print_command(st, env, Command::EqNo { left });
+                    print_char(st, env, b')');
                     st.save_stack.cur_level -= 1;
                     if !leave_group_boundary(st) {
                         break;
                     }
                     continue;
                 }
-                print_char(st, b'$');
+                print_char(st, env, b'$');
                 Entry::Found
             }
             GroupCode::MathLeft => {
                 let delim = st.input.nest.stale_slot(p + 1).e_tex_aux;
                 if delim.is_some_and(|d| st.mem.node_type(d) == Ok(NodeType::LeftNoad)) {
-                    print_esc(st, "left");
+                    print_esc(st, env, "left");
                 } else {
-                    print_esc(st, "middle");
+                    print_esc(st, env, "middle");
                 }
                 Entry::Found
             }
@@ -402,48 +413,48 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     } else {
                         Command::Vmove { raise: negative }
                     };
-                    print_command(st, command);
-                    print_scaled(st, d.abs());
-                    print(st, "pt");
+                    print_command(st, env, command);
+                    print_scaled(st, env, d.abs());
+                    print(st, env, "pt");
                 }
                 Some(Saved::BoxContext(BoxContext::SetBox { register, global })) => {
                     if global {
-                        print_esc(st, "global");
+                        print_esc(st, env, "global");
                     }
-                    print_esc(st, "setbox");
-                    print_int(st, register.into());
-                    print_char(st, b'=');
+                    print_esc(st, env, "setbox");
+                    print_int(st, env, register.into());
+                    print_char(st, env, b'=');
                 }
                 Some(Saved::BoxContext(BoxContext::ShipOut)) => {
-                    print_command(st, Command::LeaderShip(LeaderCode::Shipout));
+                    print_command(st, env, Command::LeaderShip(LeaderCode::Shipout));
                 }
                 Some(Saved::BoxContext(BoxContext::Leaders(kind))) => {
-                    print_command(st, Command::LeaderShip(LeaderCode::of_leaders(kind)));
+                    print_command(st, env, Command::LeaderShip(LeaderCode::of_leaders(kind)));
                 }
                 _ => {}
             }
         }
 
         if matches!(entry, Entry::BoxContext | Entry::Found1) {
-            print_esc(st, s);
+            print_esc(st, env, s);
             let (word, amount) = match st.save_stack.kept(1) {
                 Some(Saved::Spec(PackSpec::Exactly(size))) => ("to", size),
                 Some(Saved::Spec(PackSpec::Additional(extra))) => ("spread", extra),
                 _ => ("spread", Scaled::ZERO),
             };
             if amount != Scaled::ZERO {
-                print_char(st, b' ');
-                print(st, word);
-                print_scaled(st, amount);
-                print(st, "pt");
+                print_char(st, env, b' ');
+                print(st, env, word);
+                print_scaled(st, env, amount);
+                print(st, env, "pt");
             }
         }
 
         if !matches!(entry, Entry::Found) {
-            print_char(st, b'{');
+            print_char(st, env, b'{');
         }
 
-        print_char(st, b')');
+        print_char(st, env, b')');
         st.save_stack.cur_level -= 1;
         if !leave_group_boundary(st) {
             break;
@@ -455,49 +466,53 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
     st.save_stack.cur_group = saved_group;
 }
 
-pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), Abort> {
+pub(crate) fn show_whatever(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: ShowCode,
+) -> Result<(), Abort> {
     match code {
         ShowCode::Lists => {
-            show_to_stream(st)?;
+            show_to_stream(st, env)?;
             begin_diagnostic(st);
-            show_activities(st);
+            show_activities(st, env);
         }
         ShowCode::Box => {
-            let n = scan_register_num(st)?;
+            let n = scan_register_num(st, env)?;
             let contents = fetch_box(st, n);
-            show_to_stream(st)?;
+            show_to_stream(st, env)?;
             begin_diagnostic(st);
-            print_nl(st, "> \\box");
-            print_int(st, n.into());
-            print_char(st, b'=');
+            print_nl(st, env, "> \\box");
+            print_int(st, env, n.into());
+            print_char(st, env, b'=');
             match contents {
-                Some(b) => show_box(st, b.ptr()),
-                None => print(st, "void"),
+                Some(b) => show_box(st, env, b.ptr()),
+                None => print(st, env, "void"),
             }
         }
         ShowCode::Show => {
-            get_token(st)?;
-            show_to_stream(st)?;
-            print_nl(st, "> ");
+            get_token(st, env)?;
+            show_to_stream(st, env)?;
+            print_nl(st, env, "> ");
             if !st.scanner.cur_cs.is_none() {
-                sprint_cs(st, st.scanner.cur_cs);
-                print_char(st, b'=');
+                sprint_cs(st, env, st.scanner.cur_cs);
+                print_char(st, env, b'=');
             }
-            print_meaning(st);
+            print_meaning(st, env);
         }
         ShowCode::Groups => {
-            show_to_stream(st)?;
+            show_to_stream(st, env)?;
             begin_diagnostic(st);
-            show_save_groups(st);
+            show_save_groups(st, env);
         }
         ShowCode::Ifs => {
-            show_to_stream(st)?;
+            show_to_stream(st, env)?;
             begin_diagnostic(st);
-            print_nl(st, "");
-            print_ln(st);
+            print_nl(st, env, "");
+            print_ln(st, env);
             if st.scanner.conds.top().is_none() {
-                print_nl(st, "### ");
-                print(st, "no active conditionals");
+                print_nl(st, env, "### ");
+                print(st, env, "no active conditionals");
             } else {
                 let saved: Vec<_> = st.scanner.conds.iter_from_top().copied().collect();
                 let mut n = i32::try_from(saved.len()).unwrap_or(i32::MAX);
@@ -505,14 +520,14 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;
                 for cond in &saved {
-                    print_nl(st, "### level ");
-                    print_int(st, n);
-                    print(st, ": ");
-                    print_command(st, Command::IfTest(t));
+                    print_nl(st, env, "### level ");
+                    print_int(st, env, n);
+                    print(st, env, ": ");
+                    print_command(st, env, Command::IfTest(t));
                     if m == FiOrElseCode::Fi {
-                        print_esc(st, "else");
+                        print_esc(st, env, "else");
                     }
-                    print_if_line(st, l);
+                    print_if_line(st, env, l);
                     n -= 1;
                     (t, l, m) = (cond.cur_if, cond.if_line, cond.if_limit);
                 }
@@ -525,11 +540,11 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                 TheCode::The
             };
             let list = st.mem.tokens.begin()?;
-            the_toks(st, the, &list)?;
+            the_toks(st, env, the, &list)?;
             let list = st.mem.tokens.finish(list)?;
-            show_to_stream(st)?;
-            print_nl(st, "> ");
-            token_show(st, list);
+            show_to_stream(st, env)?;
+            print_nl(st, env, "> ");
+            token_show(st, env, list);
             st.mem.tokens.flush(list);
         }
     }
@@ -538,20 +553,20 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
         code,
         ShowCode::Lists | ShowCode::Box | ShowCode::Groups | ShowCode::Ifs
     ) {
-        end_diagnostic(st, true);
-        print_error_prefix(st);
-        print(st, "OK");
+        end_diagnostic(st, env, true);
+        print_error_prefix(st, env);
+        print(st, env, "OK");
         if st.shipout.selector == Selector::TermAndLog
             && st.eqtb.int_par(IntPar::TracingOnline) <= 0
         {
             st.shipout.selector = Selector::TermOnly;
-            print(st, " (see the transcript file)");
+            print(st, env, " (see the transcript file)");
             st.shipout.selector = Selector::TermAndLog;
         }
     }
 
     if st.shipout.selector < Selector::NoPrint {
-        print_ln(st);
+        print_ln(st, env);
         st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
             Selector::NoPrint
         } else {
@@ -580,10 +595,10 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             "lists on your terminal as well as in the transcript file.",
         ]);
     }
-    finish_error(st)
+    finish_error(st, env)
 }
 
-fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
+fn show_to_stream(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let Ok(stream) = u8::try_from(st.eqtb.int_par(IntPar::ShowStream)) else {
         return Ok(());
     };
@@ -591,32 +606,32 @@ fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     };
     if open && stream < Selector::NoPrint.raw() {
-        ensure_write_stream_open(st, usize::from(stream))?;
+        ensure_write_stream_open(st, env, usize::from(stream))?;
         st.shipout.selector = Selector::File(stream);
     }
     Ok(())
 }
 
-fn show_page_so_far(st: &mut EngineState) {
+fn show_page_so_far(st: &mut EngineState, env: &mut EngineEnv) {
     if st.shipout.page_tail != Some(PAGE_HEAD) {
-        print_nl(st, "### current page:");
+        print_nl(st, env, "### current page:");
         if st.shipout.output_active {
-            print(st, " (held over for next output)");
+            print(st, env, " (held over for next output)");
         }
-        show_box(st, PAGE_HEAD.link(&st.mem));
+        show_box(st, env, PAGE_HEAD.link(&st.mem));
         if st.shipout.page_contents != PageContents::Empty {
-            print_nl(st, "total height ");
-            print_totals(st);
-            print_nl(st, " goal height ");
-            print_scaled(st, st.shipout.page_so_far[0]);
+            print_nl(st, env, "total height ");
+            print_totals(st, env);
+            print_nl(st, env, " goal height ");
+            print_scaled(st, env, st.shipout.page_so_far[0]);
             let mut r = PAGE_INS_HEAD.link(&st.mem);
             while let Some(here) = r.filter(|&x| x != PAGE_INS_HEAD) {
                 let ins = NodePtr::<PageInsNode>::at(here);
-                print_ln(st);
-                print_esc(st, "insert");
+                print_ln(st, env);
+                print_esc(st, env, "insert");
                 let box_num = st.mem[ins].box_number;
-                print_int(st, i32::from(box_num));
-                print(st, " adds ");
+                print_int(st, env, i32::from(box_num));
+                print(st, env, " adds ");
                 let count = st.eqtb.count(box_num);
                 let height = st.mem[ins].height;
                 let adds = if count == 1000 {
@@ -624,7 +639,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 } else {
                     x_over_n(height, 1000).quotient * count
                 };
-                print_scaled(st, adds);
+                print_scaled(st, env, adds);
                 if st.mem[ins].is_split_up() {
                     let broken_ins = st.mem[ins].broken_ins;
                     let mut q = PAGE_HEAD;
@@ -640,62 +655,62 @@ fn show_page_so_far(st: &mut EngineState) {
                             break;
                         }
                     }
-                    print(st, ", #");
-                    print_int(st, t);
-                    print(st, " might split");
+                    print(st, env, ", #");
+                    print_int(st, env, t);
+                    print(st, env, " might split");
                 }
                 r = here.link(&st.mem);
             }
         }
     }
     if !CONTRIB_HEAD.link(&st.mem).is_none() {
-        print_nl(st, "### recent contributions:");
+        print_nl(st, env, "### recent contributions:");
     }
 }
 
-fn show_activities(st: &mut EngineState) {
+fn show_activities(st: &mut EngineState, env: &mut EngineEnv) {
     st.input.nest.park(st.input.cur_list);
-    print_nl(st, "");
-    print_ln(st);
+    print_nl(st, env, "");
+    print_ln(st, env);
     for p in (0..=st.input.nest.len()).rev() {
         let nest = st.input.nest[p];
-        print_nl(st, "### ");
-        print_mode(st, nest.mode.name());
-        print(st, " entered at line ");
-        print_int(st, nest.mode_line.abs());
+        print_nl(st, env, "### ");
+        print_mode(st, env, nest.mode.name());
+        print(st, env, " entered at line ");
+        print_int(st, env, nest.mode_line.abs());
         if nest.mode.is_paragraph() && nest.prev_graf != 0x83_0000 {
             let pg = nest.prev_graf;
-            print(st, " (language");
-            print_int(st, pg % 65536);
-            print(st, ":hyphenmin");
-            print_int(st, pg / 0x40_0000);
-            print_char(st, b',');
-            print_int(st, (pg / 65536) % 64);
-            print_char(st, b')');
+            print(st, env, " (language");
+            print_int(st, env, pg % 65536);
+            print(st, env, ":hyphenmin");
+            print_int(st, env, pg / 0x40_0000);
+            print_char(st, env, b',');
+            print_int(st, env, (pg / 65536) % 64);
+            print_char(st, env, b')');
         }
         if nest.mode_line < 0 {
-            print(st, " (\\output routine)");
+            print(st, env, " (\\output routine)");
         }
         if p == 0 {
-            show_page_so_far(st);
+            show_page_so_far(st, env);
         }
-        show_box(st, nest.head.link(&st.mem));
+        show_box(st, env, nest.head.link(&st.mem));
 
         match nest.mode {
             Mode::Vertical { prev_depth, .. } => {
-                print_nl(st, "prevdepth ");
+                print_nl(st, env, "prevdepth ");
                 if prev_depth <= IGNORE_DEPTH {
-                    print(st, "ignored");
+                    print(st, env, "ignored");
                 } else {
-                    print_scaled(st, prev_depth);
+                    print_scaled(st, env, prev_depth);
                 }
                 if nest.prev_graf != 0 {
-                    print(st, ", prevgraf ");
-                    print_int(st, nest.prev_graf);
+                    print(st, env, ", prevgraf ");
+                    print_int(st, env, nest.prev_graf);
                     if nest.prev_graf != 1 {
-                        print(st, " lines");
+                        print(st, env, " lines");
                     } else {
-                        print(st, " line");
+                        print(st, env, " line");
                     }
                 }
             }
@@ -704,19 +719,19 @@ fn show_activities(st: &mut EngineState) {
                 space_factor,
                 clang,
             } => {
-                print_nl(st, "spacefactor ");
-                print_int(st, space_factor);
+                print_nl(st, env, "spacefactor ");
+                print_int(st, env, space_factor);
                 if !inner && clang > 0 {
-                    print(st, ", current language ");
-                    print_int(st, clang);
+                    print(st, env, ", current language ");
+                    print_int(st, env, clang);
                 }
             }
             Mode::Math {
                 incompleat_noad, ..
             } => {
                 if let Some(n) = incompleat_noad {
-                    print(st, "this will begin denominator of:");
-                    show_box(st, n.ptr());
+                    print(st, env, "this will begin denominator of:");
+                    show_box(st, env, n.ptr());
                 }
             }
             Mode::None => {}
@@ -732,7 +747,7 @@ fn begin_pseudoprint(st: &mut EngineState) -> i32 {
     l
 }
 
-pub(crate) fn show_context(st: &mut EngineState) {
+pub(crate) fn show_context(st: &mut EngineState, env: &mut EngineEnv) {
     st.input.base_ptr = st.input.input_stack.len();
     st.input.input_stack.park(st.input.cur_input);
     let mut nn = -1;
@@ -762,23 +777,26 @@ pub(crate) fn show_context(st: &mut EngineState) {
                 let l;
                 if ci.state != TOKEN_LIST {
                     match ci.name {
-                        InputName::Terminal if st.input.base_ptr == 0 => print_nl(st, "<*>"),
-                        InputName::Terminal => print_nl(st, "<insert> "),
-                        InputName::Read(n) => print(st, (super::Nl("<read "), i32::from(n), '>')),
-                        InputName::ReadTerminal => print_nl(st, "<read *>"),
+                        InputName::Terminal if st.input.base_ptr == 0 => print_nl(st, env, "<*>"),
+                        InputName::Terminal => print_nl(st, env, "<insert> "),
+                        InputName::Read(n) => {
+                            print(st, env, (super::Nl("<read "), i32::from(n), '>'))
+                        }
+                        InputName::ReadTerminal => print_nl(st, env, "<read *>"),
                         _ => {
-                            print_nl(st, "l.");
+                            print_nl(st, env, "l.");
                             if usize::from(ci.index) == st.input.in_open {
-                                print_int(st, st.mem.line);
+                                print_int(st, env, st.mem.line);
                             } else {
                                 print_int(
                                     st,
+                                    env,
                                     st.input.open_levels[usize::from(ci.index) + 1].outer_line,
                                 );
                             }
                         }
                     }
-                    print_char(st, b' ');
+                    print_char(st, env, b' ');
                     l = begin_pseudoprint(st);
                     let end_line_char = st.eqtb.int_par(IntPar::EndLineChar);
                     let j = if st.input.buffer[ci.limit] == end_line_char {
@@ -790,21 +808,21 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         if i == ci.loc {
                             set_trick_count(st);
                         }
-                        print_char(st, st.input.buffer[i]);
+                        print_char(st, env, st.input.buffer[i]);
                     }
                 } else {
                     match ci.token_type() {
                         TokenType::Macro => {
-                            print_ln(st);
+                            print_ln(st, env);
                             if let InputName::Macro(cs) = ci.name {
-                                print_cs(st, Some(cs));
+                                print_cs(st, env, Some(cs));
                             }
                         }
-                        t => print_nl(st, t.label(ci.token_loc())),
+                        t => print_nl(st, env, t.label(ci.token_loc())),
                     }
                     l = begin_pseudoprint(st);
                     let from = level_start(st, &ci);
-                    show_token_list(st, from, ci.token_loc(), 100_000);
+                    show_token_list(st, env, from, ci.token_loc(), 100_000);
                 }
                 st.shipout.selector = old_setting;
                 if st.errors.trick_count == 1_000_000 {
@@ -820,18 +838,18 @@ pub(crate) fn show_context(st: &mut EngineState) {
                 let (start, n) = if l + first_count <= st.errors.half_error_line {
                     (0, l + first_count)
                 } else {
-                    print(st, "...");
+                    print(st, env, "...");
                     (
                         l + first_count - st.errors.half_error_line + 3,
                         st.errors.half_error_line,
                     )
                 };
                 for q in start..first_count {
-                    print_char(st, st.errors.trick_buf[(q % error_line) as usize]);
+                    print_char(st, env, st.errors.trick_buf[(q % error_line) as usize]);
                 }
-                print_ln(st);
+                print_ln(st, env);
                 for _ in 0..n {
-                    print_raw_char(st, b' ', true);
+                    print_raw_char(st, env, b' ', true);
                 }
                 let end = if m + n <= error_line {
                     first_count + m
@@ -839,15 +857,15 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     first_count + (error_line - n - 3)
                 };
                 for q in first_count..end {
-                    print_char(st, st.errors.trick_buf[(q % error_line) as usize]);
+                    print_char(st, env, st.errors.trick_buf[(q % error_line) as usize]);
                 }
                 if m + n > error_line {
-                    print(st, "...");
+                    print(st, env, "...");
                 }
                 nn += 1;
             }
         } else if nn == error_context_lines {
-            print_nl(st, "...");
+            print_nl(st, env, "...");
             nn += 1;
         }
         if bottom_line {

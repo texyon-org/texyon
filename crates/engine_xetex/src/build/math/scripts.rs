@@ -6,6 +6,7 @@ use crate::base::consts::{EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, S
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, MemPtr, NodeType, Scaled};
 use crate::build::packaging::{PackSpec, hpack, vpackage};
+use crate::env::EngineEnv;
 use crate::fonts::new_native_character;
 use crate::fonts::ot_math::ScriptKind;
 use crate::memory::mem::MemState;
@@ -97,13 +98,14 @@ struct ScriptBoxPrep {
 
 fn clean_script_box(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     script_field: MathSlot,
     clean_style: MathStyle,
     saved_font: FontId,
     adjustment: ScriptBoxAdjustment,
     style: MathStyle,
 ) -> Result<ScriptBoxPrep, Abort> {
-    let node = clean_box(st, st.mem[script_field], clean_style)?;
+    let node = clean_box(st, env, st.mem[script_field], clean_style)?;
     let shift = match adjustment {
         ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, style.size()),
         ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, style.size()),
@@ -133,6 +135,7 @@ struct ScriptShifts {
 
 fn initial_script_shifts(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     p: MemPtr,
     style: MathStyle,
 ) -> Result<ScriptShifts, Abort> {
@@ -142,7 +145,7 @@ fn initial_script_shifts(
             down: Scaled::ZERO,
         })
     } else {
-        let zb = hpack(st, p, PackSpec::NATURAL)?;
+        let zb = hpack(st, env, p, PackSpec::NATURAL)?;
         let t = if style < MathStyle::SCRIPT {
             SCRIPT_SIZE
         } else {
@@ -171,7 +174,11 @@ struct SubSupStackInput {
     delta: Scaled,
 }
 
-fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<(), Abort> {
+fn finish_subsup_stack(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    input: SubSupStackInput,
+) -> Result<(), Abort> {
     let mut p = input.p;
     let mut sub_kern;
     let mut sup_kern = Scaled::ZERO;
@@ -212,7 +219,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     st.mem[input.x].link = kern.ptr();
     st.mem[kern].link = input.y.ptr();
 
-    let packaged = vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+    let packaged = vpackage(st, env, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[packaged].shift_amount = input.shift_down;
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
@@ -227,16 +234,25 @@ struct PreparedScript {
 
 fn prepare_subscript(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
     shift_down: Scaled,
     style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
     let script_field = MathSlot::Subscr(q);
-    let (glyph, font) = first_script_glyph(st, script_field, style)?;
+    let (glyph, font) = first_script_glyph(st, env, script_field, style)?;
     let save_f = st.scanner.cur_f;
     let clean_style = style.sub();
-    let prepared = clean_script_box(st, script_field, clean_style, save_f, adjustment, style)?;
+    let prepared = clean_script_box(
+        st,
+        env,
+        script_field,
+        clean_style,
+        save_f,
+        adjustment,
+        style,
+    )?;
     Ok(PreparedScript {
         box_node: prepared.box_node,
         glyph,
@@ -247,6 +263,7 @@ fn prepare_subscript(
 
 fn finish_subscript_only(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<Noad>,
     p: MemPtr,
     shift_down: Scaled,
@@ -257,7 +274,7 @@ fn finish_subscript_only(
         glyph: sub_g,
         font: sub_f,
         shift: shift_down,
-    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down, style)?;
+    } = prepare_subscript(st, env, q, ScriptBoxAdjustment::Sub1, shift_down, style)?;
 
     let cur_f = st.scanner.cur_f;
     let box_depth = st.mem[x].height;
@@ -278,15 +295,17 @@ fn finish_subscript_only(
 
 fn prepare_superscript(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<Noad>,
     mut shift_up: Scaled,
     style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
-    let (glyph, font) = first_script_glyph(st, MathSlot::Supscr(q), style)?;
+    let (glyph, font) = first_script_glyph(st, env, MathSlot::Supscr(q), style)?;
     let save_f = st.scanner.cur_f;
     let clean_style = style.sup();
     let prepared = clean_script_box(
         st,
+        env,
         MathSlot::Supscr(q),
         clean_style,
         save_f,
@@ -314,13 +333,15 @@ fn prepare_superscript(
 
 fn finish_superscript_branch(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<Noad>,
     p: MemPtr,
-    superscript: PreparedScript,
-    mut shift_down: Scaled,
+    shifts: ScriptShifts,
     delta: Scaled,
     style: MathStyle,
 ) -> Result<(), Abort> {
+    let superscript = prepare_superscript(st, env, q, shifts.up, style)?;
+    let mut shift_down = shifts.down;
     let x = superscript.box_node;
     let shift_up = superscript.shift;
     let sub_empty = st.mem[q].subscr.math_type == EMPTY;
@@ -344,7 +365,7 @@ fn finish_superscript_branch(
         glyph: sub_g,
         font: sub_f,
         shift,
-    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub2, shift_down, style)?;
+    } = prepare_subscript(st, env, q, ScriptBoxAdjustment::Sub2, shift_down, style)?;
     shift_down = shift;
 
     let cur_f = st.scanner.cur_f;
@@ -379,6 +400,7 @@ fn finish_superscript_branch(
 
     finish_subsup_stack(
         st,
+        env,
         SubSupStackInput {
             q,
             p,
@@ -440,6 +462,7 @@ impl MemState {
 
 fn first_script_glyph(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     script_head: MathSlot,
     style: MathStyle,
 ) -> Result<(u16, FontId), Abort> {
@@ -454,12 +477,13 @@ fn first_script_glyph(
 
     if let Some(script_head) = math_char {
         let save_f = st.scanner.cur_f;
-        let fetched = fetch(st, script_head, this_math_style.size())?;
+        let fetched = fetch(st, env, script_head, this_math_style.size())?;
 
         let cur_f_after_fetch = fetched.f;
         let cur_c_after_fetch = fetched.c;
         if st.fonts.font_is_ot_math(cur_f_after_fetch) {
-            let script_c = new_native_character(st, cur_f_after_fetch, cur_c_after_fetch as u32)?;
+            let script_c =
+                new_native_character(st, env, cur_f_after_fetch, cur_c_after_fetch as u32)?;
             script_g = st.mem.get_native_glyph(script_c, 0);
             script_f = cur_f_after_fetch;
         }
@@ -472,18 +496,18 @@ fn first_script_glyph(
 
 pub(super) fn make_scripts(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     q: NodePtr<Noad>,
     delta: Scaled,
     style: MathStyle,
 ) -> Result<(), Abort> {
     let p = st.mem[q.any()].new_hlist;
-    let shifts = initial_script_shifts(st, p, style)?;
+    let shifts = initial_script_shifts(st, env, p, style)?;
 
     if st.mem[q].supscr.math_type == EMPTY {
-        finish_subscript_only(st, q, p, shifts.down, style)?;
+        finish_subscript_only(st, env, q, p, shifts.down, style)?;
     } else {
-        let superscript = prepare_superscript(st, q, shifts.up, style)?;
-        finish_superscript_branch(st, q, p, superscript, shifts.down, delta, style)?;
+        finish_superscript_branch(st, env, q, p, shifts, delta, style)?;
     }
     Ok(())
 }

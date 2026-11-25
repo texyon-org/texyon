@@ -10,14 +10,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 use std::{mem, panic};
 
-use texyon_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
+use texyon_bridge_core::{CoreBridgeLauncher, engine_lock};
 use texyon_errors::prelude::*;
 
 use crate::engine::{
     InitOutcome, cleanup, initialize_engine, release_operation_inputs, resume_resident_document,
     run_resident_document,
 };
-use crate::ffi::bridge::{enter, output_open_stdout};
+use crate::env::EngineEnv;
+use crate::ffi::bridge::output_open_stdout;
 use crate::files::io::close_files_and_terminate;
 use crate::preview::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
@@ -426,12 +427,12 @@ impl IncrementalXeTeXSession {
         let revision = sources.revision();
         let accepted_sources = sources.clone();
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| {
+        let result = with_env(launcher, |env| {
+            Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 configure(state, &config);
                 let fence_sources = sources.clone();
                 let _sources = install(sources, written);
-                match initialize_engine(state, &format, build_date) {
+                match initialize_engine(state, env, &format, build_date) {
                     InitOutcome::Ready => {}
                     InitOutcome::Terminate(history) => {
                         return OperationResult::Terminal(history);
@@ -451,6 +452,7 @@ impl IncrementalXeTeXSession {
                 *strings_base = Some(base);
                 run_document(
                     state,
+                    env,
                     ladder.insert(new_ladder),
                     DocumentRun {
                         input: &input,
@@ -522,12 +524,12 @@ impl IncrementalXeTeXSession {
         let replay_rung = selection.as_ref().map_or(0, |(target, _)| *target);
         let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| {
+        let result = with_env(launcher, |env| {
+            Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 let fence_sources = sources.clone();
                 let _sources = install(sources, written);
                 let splice = if let Some((target, fence)) = selection {
-                    release_operation_inputs(state);
+                    release_operation_inputs(state, env);
                     ladder.rewind_engine(state, target);
                     assert!(
                         fence.restore_inputs(state),
@@ -545,9 +547,10 @@ impl IncrementalXeTeXSession {
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
                 configure(state, &config);
-                state.shipout.rust_stdout = output_open_stdout();
+                state.shipout.rust_stdout = output_open_stdout(env);
                 run_document(
                     state,
+                    env,
                     ladder,
                     DocumentRun {
                         input: &input,
@@ -627,10 +630,10 @@ impl IncrementalXeTeXSession {
         let horizon_deadline = self.config.tail_chunk.map(|budget| Instant::now() + budget);
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| {
+        let result = with_env(launcher, |env| {
+            Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 let _sources = install(sources, written);
-                release_operation_inputs(state);
+                release_operation_inputs(state, env);
                 ladder.rewind_engine(state, target);
                 if !fence.restore_inputs(state) {
                     ladder.rewind_engine(state, 0);
@@ -644,9 +647,10 @@ impl IncrementalXeTeXSession {
                     ladder.unprotect(target);
                 }
                 configure(state, &config);
-                state.shipout.rust_stdout = output_open_stdout();
+                state.shipout.rust_stdout = output_open_stdout(env);
                 run_document(
                     state,
+                    env,
                     ladder,
                     DocumentRun {
                         input: &input,
@@ -708,15 +712,15 @@ impl IncrementalXeTeXSession {
         }
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
-        let teardown = launcher.with_global_lock(|api| {
-            Ok(panic::catch_unwind(AssertUnwindSafe(|| {
-                run_locked(api, state, |state| {
-                    release_operation_inputs(state);
+        let teardown = with_env(launcher, |env| {
+            Ok::<_, Error>(
+                panic::catch_unwind(AssertUnwindSafe(|| {
+                    release_operation_inputs(state, env);
                     ladder.rewind_engine(state, 0);
-                    cleanup(state);
-                })
-            }))
-            .is_err())
+                    cleanup(state, env);
+                }))
+                .is_err(),
+            )
         });
         self.dead = true;
         self.release_global_lease();
@@ -868,6 +872,7 @@ struct DocumentRun<'a> {
 
 fn run_document(
     state: &mut EngineState,
+    env: &mut EngineEnv,
     ladder: &mut CheckpointLadder<EngineBundle>,
     run: DocumentRun<'_>,
     checkpoint_activity: &mut CheckpointActivity,
@@ -904,19 +909,19 @@ fn run_document(
     // Pictures may have changed since the last operation.
     forget_probed_pdfs();
     let execution = match splice {
-        Some(splice) => resume_resident_document(state, splice.resume_pending_command),
-        None => run_resident_document(state, input),
+        Some(splice) => resume_resident_document(state, env, splice.resume_pending_command),
+        None => run_resident_document(state, env, input),
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },
         Err(Abort::Horizoned) => {
             let Some(rung) = horizon_rung else {
-                release_operation_inputs(state);
+                release_operation_inputs(state, env);
                 ladder.rewind_engine(state, 0);
                 return OperationResult::Aborted;
             };
-            release_operation_inputs(state);
-            if close_files_and_terminate(state).is_err() {
+            release_operation_inputs(state, env);
+            if close_files_and_terminate(state, env).is_err() {
                 ladder.rewind_engine(state, 0);
                 return OperationResult::Aborted;
             }
@@ -929,7 +934,7 @@ fn run_document(
             }
         }
         Err(error) => {
-            release_operation_inputs(state);
+            release_operation_inputs(state, env);
             // Both cancellation and fatal aborts stop at a journal-coherent
             // point, so rewind to the replay origin rather than rung zero.
             let recovery_rung = recovery_rung_clock
@@ -1006,21 +1011,19 @@ fn history_to_outcome(history: i32) -> Result<TexOutcome> {
 }
 
 fn catch_operation(
-    api: &mut CoreBridgeState<'_, '_>,
     state: &mut EngineState,
-    operation: impl FnOnce(&mut EngineState) -> OperationResult,
+    env: &mut EngineEnv,
+    operation: impl FnOnce(&mut EngineState, &mut EngineEnv) -> OperationResult,
 ) -> OperationResult {
-    panic::catch_unwind(AssertUnwindSafe(|| run_locked(api, state, operation)))
+    panic::catch_unwind(AssertUnwindSafe(|| operation(state, env)))
         .unwrap_or(OperationResult::Panicked)
 }
 
-fn run_locked<R>(
-    api: &mut CoreBridgeState<'_, '_>,
-    state: &mut EngineState,
-    operation: impl FnOnce(&mut EngineState) -> R,
-) -> R {
-    let _bridge = enter(api);
-    operation(state)
+/// Runs `f` under the engine lock with an environment over `launcher`'s host.
+fn with_env<R>(launcher: &mut CoreBridgeLauncher, f: impl FnOnce(&mut EngineEnv) -> R) -> R {
+    let _lock = engine_lock();
+    let mut env = EngineEnv::new(launcher.host());
+    f(&mut env)
 }
 
 #[cfg(test)]

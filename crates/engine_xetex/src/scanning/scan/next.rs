@@ -10,6 +10,7 @@ use crate::base::mode::Mode;
 use crate::base::params::{IntPar, TokPar};
 use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::BufPos;
+use crate::env::EngineEnv;
 use crate::ffi::bridge::output_flush;
 use crate::files::io::{FileSlot, input_slot_line};
 use crate::memory::mem::MemState;
@@ -31,9 +32,9 @@ impl MemState {
     }
 }
 
-pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_x_or_protected(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
-        get_token(st)?;
+        get_token(st, env)?;
         if st.scanner.cur.cmd() <= Cmd::MAX_COMMAND {
             return Ok(());
         }
@@ -47,20 +48,23 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
         {
             return Ok(());
         }
-        expand(st)?;
+        expand(st, env)?;
     }
 }
 
-pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_x_non_blank_non_relax(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     loop {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
         if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
             return Ok(());
         }
     }
 }
 
-fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
+fn check_outer_validity(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.scanner.scanner_status == ScannerStatus::Normal {
         return Ok(());
     }
@@ -72,13 +76,13 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             || !matches!(ci.name, InputName::Read(_) | InputName::ReadTerminal)
         {
             let p = st.mem.tokens.single(Token::from_cs(cs))?;
-            begin_token_list(st, p, TokenType::BackedUp)?;
+            begin_token_list(st, env, p, TokenType::BackedUp)?;
         }
         st.scanner.cur = Command::Spacer(Usv::SPACE);
     }
 
     let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
-        runaway(st);
+        runaway(st, env);
         let what = if st.scanner.cur_cs.is_none() {
             "File ended"
         } else {
@@ -108,10 +112,11 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             _ => "",
         };
 
-        begin_token_list(st, inserted, TokenType::Inserted)?;
+        begin_token_list(st, env, inserted, TokenType::Inserted)?;
         let macro_name = CsName(st.scanner.warning_index);
         error(
             st,
+            env,
             (what, scanning, " of ", macro_name),
             &[
                 "I suspect you have forgotten a `}', causing me",
@@ -136,6 +141,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_tok = Token::from_cs(Frozen::Fi.cs());
         ins_error(
             st,
+            env,
             message,
             &[
                 cause,
@@ -205,7 +211,7 @@ impl InputClusterState {
 }
 
 #[inline(always)]
-pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_next(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
         let p = st.input.cur_input.token_loc();
         if let Some(t) = st.mem.tokens.peek(p) {
@@ -240,12 +246,12 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
     }
-    get_next_slow(st)
+    get_next_slow(st, env)
 }
 
 /// `get_next` for everything but a plain token from a token list.
 #[inline(never)]
-fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
+fn get_next_slow(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     'restart: loop {
@@ -350,7 +356,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 char_token = false;
                                 fetch_cs_meaning(st, cs);
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
-                                    check_outer_validity(st)?;
+                                    check_outer_validity(st, env)?;
                                 }
                             }
 
@@ -361,7 +367,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 fetch_cs_meaning(st, cs);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
-                                    check_outer_validity(st)?;
+                                    check_outer_validity(st, env)?;
                                 }
                             }
 
@@ -406,6 +412,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 st.errors.deletions_allowed = false;
                                 error(
                                     st,
+                                    env,
                                     "Text line contains an invalid character",
                                     &[
                                         "A funny symbol that I can't read has just been input.",
@@ -442,7 +449,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 let par = st.input.par_loc.or_confusion("par_loc")?;
                                 fetch_cs_meaning(st, par);
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
-                                    check_outer_validity(st)?;
+                                    check_outer_validity(st, env)?;
                                 }
                             }
 
@@ -484,7 +491,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             pseudo_input(st)?
                         } else {
                             let slot = FileSlot::Input(st.input.cur_input.index as usize);
-                            input_slot_line(st, slot)?
+                            input_slot_line(st, env, slot)?
                         };
                         if got_line {
                             st.input.cur_input.limit = st.input.last;
@@ -494,7 +501,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             if !every_eof.is_null() && !st.input.open_levels[index].eof_seen {
                                 st.input.cur_input.limit = st.input.first - 1;
                                 st.input.open_levels[index].eof_seen = true;
-                                begin_token_list(st, every_eof, TokenType::EveryEof)?;
+                                begin_token_list(st, env, every_eof, TokenType::EveryEof)?;
                                 continue 'restart;
                             }
                             st.input.force_eof = true;
@@ -507,16 +514,16 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             && (st.input.open_levels[in_open].grp != st.save_stack.cur_boundary
                                 || st.input.open_levels[in_open].cond != st.scanner.conds.top())
                         {
-                            file_warning(st);
+                            file_warning(st, env);
                         }
                         if st.input.cur_input.name.shows_parens() {
-                            print_char(st, b')');
+                            print_char(st, env, b')');
                             st.input.open_parens -= 1;
-                            output_flush(st.shipout.rust_stdout);
+                            output_flush(env, st.shipout.rust_stdout);
                         }
                         st.input.force_eof = false;
-                        end_file_reading(st)?;
-                        check_outer_validity(st)?;
+                        end_file_reading(st, env)?;
+                        check_outer_validity(st, env)?;
                         continue 'restart;
                     }
 
@@ -527,13 +534,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         return Ok(());
                     }
                     if !st.input.input_stack.is_empty() {
-                        end_file_reading(st)?;
+                        end_file_reading(st, env)?;
                         continue 'restart;
                     }
                     let coda = st.eqtb.tok_par(TokPar::TectonicCoda);
                     if !st.scanner.used_tectonic_coda_tokens && !coda.is_null() {
                         st.scanner.used_tectonic_coda_tokens = true;
-                        begin_token_list(st, coda, TokenType::TectonicCoda)?;
+                        begin_token_list(st, env, coda, TokenType::TectonicCoda)?;
                         continue 'restart;
                     }
                     return Err(Abort::NoLegalEnd {
@@ -563,7 +570,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             {
                                 return Err(Abort::Fatal("Unbalanced write command"));
                             }
-                            check_outer_validity(st)?;
+                            check_outer_validity(st, env)?;
                         }
                     }
                 }
@@ -607,7 +614,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 st.mem[column].v_part
             };
-            begin_token_list(st, template, TokenType::VTemplate)?;
+            begin_token_list(st, env, template, TokenType::VTemplate)?;
             st.scanner.align_state = 1_000_000;
             continue 'restart;
         }
@@ -617,9 +624,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 #[inline]
-pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_x_non_blank(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
-        get_x_token(st)?;
+        get_x_token(st, env)?;
         if st.scanner.cur.cmd() != Cmd::Spacer {
             return Ok(());
         }
@@ -634,48 +641,48 @@ fn pack_cur_tok(st: &mut EngineState) {
     };
 }
 
-pub(crate) fn x_token(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn x_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     while st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
-        expand(st)?;
-        get_next(st)?;
+        expand(st, env)?;
+        get_next(st, env)?;
     }
     pack_cur_tok(st);
     Ok(())
 }
 
-pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_x_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
         if st.cancellation.at_expansion_token() {
             return Err(Abort::Cancelled);
         }
-        get_next(st)?;
+        get_next(st, env)?;
         if st.scanner.cur.cmd() <= Cmd::MAX_COMMAND {
             break;
         }
         if st.scanner.cur.cmd() >= Cmd::Call {
             if st.scanner.cur.cmd() < Cmd::EndTemplate {
-                macro_call(st)?;
+                macro_call(st, env)?;
             } else {
                 st.scanner.cur_cs = Some(Frozen::Endv.cs());
                 st.scanner.cur = Command::Endv;
                 break;
             }
         } else {
-            expand(st)?;
+            expand(st, env)?;
         }
     }
     pack_cur_tok(st);
     Ok(())
 }
 
-pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn pass_text(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     st.scanner.scanner_status = ScannerStatus::Skipping;
     let mut l: i32 = 0;
     st.scanner.skip_line = st.mem.line;
 
     loop {
-        get_next(st)?;
+        get_next(st, env)?;
         if st.scanner.cur.cmd() == Cmd::FiOrElse {
             if l == 0 {
                 break;
@@ -689,13 +696,13 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.scanner.scanner_status = save_scanner_status;
     if st.eqtb.int_par(IntPar::TracingIfs) > 0 {
-        show_cur_cmd_chr(st);
+        show_cur_cmd_chr(st, env);
     }
     Ok(())
 }
-pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     st.eqtb.no_new_control_sequence = false;
-    get_next(st)?;
+    get_next(st, env)?;
     st.eqtb.no_new_control_sequence = true;
     pack_cur_tok(st);
     Ok(())

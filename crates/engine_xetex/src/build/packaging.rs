@@ -7,6 +7,7 @@ use crate::base::scaled_math::badness;
 use crate::base::units::{
     Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled,
 };
+use crate::env::EngineEnv;
 use crate::fonts::FontState;
 use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD};
 use crate::memory::mem_types::ListStateRecord;
@@ -561,77 +562,85 @@ impl MemState {
 
 fn print_hpack_diag(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     box_ptr: NodePtr<BoxNode>,
     diag: PackDiag,
     origin: PackOrigin,
 ) {
-    print_ln(st);
-    begin_warning(st);
+    print_ln(st, env);
+    begin_warning(st, env);
     match diag {
         PackDiag::HUnderfull { badness, loose } => {
             if loose {
-                print_nl(st, "Loose");
+                print_nl(st, env, "Loose");
             } else {
-                print_nl(st, "Underfull");
+                print_nl(st, env, "Underfull");
             }
-            print(st, " \\hbox (badness ");
-            print_int(st, badness);
+            print(st, env, " \\hbox (badness ");
+            print_int(st, env, badness);
         }
         PackDiag::HOverfull { excess } => {
-            print_nl(st, "Overfull \\hbox (");
-            print_scaled(st, excess);
-            print(st, "pt too wide");
+            print_nl(st, env, "Overfull \\hbox (");
+            print_scaled(st, env, excess);
+            print(st, env, "pt too wide");
         }
         PackDiag::HTight { badness } => {
-            print_nl(st, "Tight \\hbox (badness ");
-            print_int(st, badness);
+            print_nl(st, env, "Tight \\hbox (badness ");
+            print_int(st, env, badness);
         }
         PackDiag::LrProblem { missing, extra } => {
-            print_nl(st, "\\endL or \\endR problem (");
-            print_int(st, missing);
-            print(st, " missing, ");
-            print_int(st, extra);
-            print(st, " extra");
+            print_nl(st, env, "\\endL or \\endR problem (");
+            print_int(st, env, missing);
+            print(st, env, " missing, ");
+            print_int(st, env, extra);
+            print(st, env, " extra");
         }
         PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
             unreachable!("vpack diagnostic passed to hpack printer")
         }
     }
-    print_hpack_common_ending(st, box_ptr, origin);
+    print_hpack_common_ending(st, env, box_ptr, origin);
 }
 
-fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
+fn print_hpack_common_ending(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    box_ptr: NodePtr<BoxNode>,
+    origin: PackOrigin,
+) {
     if st.shipout.output_active {
-        print(st, ") has occurred while \\output is active");
+        print(st, env, ") has occurred while \\output is active");
     } else {
         match origin {
-            PackOrigin::Here => print(st, ") detected at line "),
-            PackOrigin::Paragraph(line) => print(st, (") in paragraph at lines ", line, "--")),
-            PackOrigin::Alignment(line) => print(st, (") in alignment at lines ", line, "--")),
+            PackOrigin::Here => print(st, env, ") detected at line "),
+            PackOrigin::Paragraph(line) => print(st, env, (") in paragraph at lines ", line, "--")),
+            PackOrigin::Alignment(line) => print(st, env, (") in alignment at lines ", line, "--")),
         }
-        print_int(st, st.mem.line);
+        print_int(st, env, st.mem.line);
     }
-    end_capture(st);
-    print_ln(st);
+    end_capture(st, env);
+    print_ln(st, env);
     st.errors.font_in_short_display = NULL_FONT;
     let list = st.mem[box_ptr].list_ptr;
-    short_display(st, list);
-    print_ln(st);
+    short_display(st, env, list);
+    print_ln(st, env);
     begin_diagnostic(st);
-    show_box(st, box_ptr.ptr());
-    end_diagnostic(st, true);
+    show_box(st, env, box_ptr.ptr());
+    end_diagnostic(st, env, true);
 }
 
 pub(crate) fn hpack(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     list: MemPtr,
     spec: PackSpec,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    Ok(hpack_with(st, list, spec, PackOrigin::Here, None)?.r_box)
+    Ok(hpack_with(st, env, list, spec, PackOrigin::Here, None)?.r_box)
 }
 
 pub(crate) fn hpack_with(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     list: MemPtr,
     spec: PackSpec,
     origin: PackOrigin,
@@ -641,7 +650,7 @@ pub(crate) fn hpack_with(
         .mem
         .hpack(&st.eqtb, &mut st.fonts, &mut st.shipout, list, spec, adjust)?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_hpack_diag(st, outcome.r_box, diag, origin);
+        print_hpack_diag(st, env, outcome.r_box, diag, origin);
     }
     Ok(outcome.packed())
 }
@@ -799,30 +808,31 @@ impl MemState {
 
 pub(crate) fn print_vpack_diag(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     box_ptr: NodePtr<BoxNode>,
     diag: PackDiag,
     origin: PackOrigin,
 ) {
-    print_ln(st);
-    begin_warning(st);
+    print_ln(st, env);
+    begin_warning(st, env);
     match diag {
         PackDiag::VUnderfull { badness, loose } => {
             if loose {
-                print_nl(st, "Loose");
+                print_nl(st, env, "Loose");
             } else {
-                print_nl(st, "Underfull");
+                print_nl(st, env, "Underfull");
             }
-            print(st, " \\vbox (badness ");
-            print_int(st, badness);
+            print(st, env, " \\vbox (badness ");
+            print_int(st, env, badness);
         }
         PackDiag::VOverfull { excess } => {
-            print_nl(st, "Overfull \\vbox (");
-            print_scaled(st, excess);
-            print(st, "pt too high");
+            print_nl(st, env, "Overfull \\vbox (");
+            print_scaled(st, env, excess);
+            print(st, env, "pt too high");
         }
         PackDiag::VTight { badness } => {
-            print_nl(st, "Tight \\vbox (badness ");
-            print_int(st, badness);
+            print_nl(st, env, "Tight \\vbox (badness ");
+            print_int(st, env, badness);
         }
         PackDiag::HUnderfull { .. }
         | PackDiag::HOverfull { .. }
@@ -831,40 +841,47 @@ pub(crate) fn print_vpack_diag(
             unreachable!("hpack diagnostic passed to vpack printer")
         }
     }
-    print_vpack_common_ending(st, box_ptr, origin);
+    print_vpack_common_ending(st, env, box_ptr, origin);
 }
 
-fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
+fn print_vpack_common_ending(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    box_ptr: NodePtr<BoxNode>,
+    origin: PackOrigin,
+) {
     if st.shipout.output_active {
-        print(st, ") has occurred while \\output is active");
+        print(st, env, ") has occurred while \\output is active");
     } else {
         match origin {
-            PackOrigin::Here => print(st, ") detected at line "),
+            PackOrigin::Here => print(st, env, ") detected at line "),
             // WEB's vpack names an alignment for any nonzero `pack_begin_line`.
             PackOrigin::Paragraph(line) | PackOrigin::Alignment(line) => {
-                print(st, (") in alignment at lines ", line, "--"))
+                print(st, env, (") in alignment at lines ", line, "--"))
             }
         }
-        print_int(st, st.mem.line);
-        print_ln(st);
+        print_int(st, env, st.mem.line);
+        print_ln(st, env);
     }
-    end_capture(st);
+    end_capture(st, env);
     begin_diagnostic(st);
-    show_box(st, box_ptr.ptr());
-    end_diagnostic(st, true);
+    show_box(st, env, box_ptr.ptr());
+    end_diagnostic(st, env, true);
 }
 
 pub(crate) fn vpackage(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     list: MemPtr,
     spec: PackSpec,
     l: Scaled,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    Ok(vpackage_with(st, list, spec, l, PackOrigin::Here)?.r_box)
+    Ok(vpackage_with(st, env, list, spec, l, PackOrigin::Here)?.r_box)
 }
 
 pub(crate) fn vpackage_with(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     list: MemPtr,
     spec: PackSpec,
     l: Scaled,
@@ -872,7 +889,7 @@ pub(crate) fn vpackage_with(
 ) -> Result<Packed, Abort> {
     let outcome = st.mem.vpackage(&st.eqtb, &mut st.shipout, list, spec, l)?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_vpack_diag(st, outcome.r_box, diag, origin);
+        print_vpack_diag(st, env, outcome.r_box, diag, origin);
     }
     Ok(outcome.packed())
 }

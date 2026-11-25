@@ -5,6 +5,7 @@ use super::lists::{ActiveEntry, PassiveId};
 use crate::base::params::{GluePar, IntPar};
 use crate::base::units::{MemPtr, Scaled};
 use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec, hpack_with};
+use crate::env::EngineEnv;
 use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
 use crate::print::errors::{Abort, OrConfusion};
@@ -368,6 +369,7 @@ impl Breaker {
 
 pub(super) fn post_line_break(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     lb: &mut Breaker,
     best: &ActiveEntry,
     display: bool,
@@ -393,7 +395,7 @@ pub(super) fn post_line_break(
             PackSpec::Exactly(hpack.cur_width)
         };
         let mut adjust = AdjustTails::HEADS;
-        let just_box = hpack_with(st, hpack.q, spec, lines.origin, Some(&mut adjust))?.r_box;
+        let just_box = hpack_with(st, env, hpack.q, spec, lines.origin, Some(&mut adjust))?.r_box;
 
         match lb.post_line_break_suffix(st, just_box, &mut lines, hpack, adjust)? {
             None => break just_box,

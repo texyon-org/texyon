@@ -11,6 +11,7 @@ use crate::base::scaled_math::badness;
 use crate::base::token::TokenList;
 use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::linebreak::Widths;
+use crate::env::EngineEnv;
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::{MemState, TEMP_HEAD};
 use crate::memory::node::{
@@ -259,17 +260,21 @@ impl MemState {
     }
 }
 
-fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> Result<(), Abort> {
+fn print_vert_break_infinite_shrinkage_error(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     const MESSAGE: &str = "Infinite glue shrinkage found in box being split";
     if st
         .eqtb
         .ignores_primitive_error(IgnoredError::VsplitInfiniteShrink)
     {
-        print_ignored_err(st, MESSAGE);
+        print_ignored_err(st, env, MESSAGE);
         return Ok(());
     }
     error(
         st,
+        env,
         MESSAGE,
         &[
             r"The box you are \vsplitting contains some infinitely",
@@ -294,6 +299,7 @@ impl MemState {
 
 pub(crate) fn vert_break(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     p: MemPtr,
     h: Scaled,
     d: Scaled,
@@ -305,7 +311,7 @@ pub(crate) fn vert_break(
                 return Ok((best_place, cursor.best_height_plus_depth));
             }
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
-                print_vert_break_infinite_shrinkage_error(st)?;
+                print_vert_break_infinite_shrinkage_error(st, env)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
             }
         }
@@ -495,9 +501,10 @@ impl MemState {
     }
 }
 
-fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
+fn print_vsplit_needs_vbox_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         ("", Esc("vsplit"), " needs a ", Esc("vbox")),
         &[
             r"The box you are trying to split is an \hbox.",
@@ -506,26 +513,27 @@ fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
+fn print_vsplit_packages(st: &mut EngineState, env: &mut EngineEnv, outcome: VsplitOutcome) {
     for package in outcome.packages.into_iter().flatten() {
         for diag in package.diags.into_iter().flatten() {
-            print_vpack_diag(st, package.r_box, diag, PackOrigin::Here);
+            print_vpack_diag(st, env, package.r_box, diag, PackOrigin::Here);
         }
     }
 }
 
 pub(crate) fn vsplit(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     n: Register,
     h: Scaled,
 ) -> Result<Option<NodePtr<BoxNode>>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
-            print_vsplit_packages(st, outcome);
+            print_vsplit_packages(st, env, outcome);
             return Ok(outcome.result);
         }
         VsplitStart::NeedsVboxDiagnostic => {
-            print_vsplit_needs_vbox_error(st)?;
+            print_vsplit_needs_vbox_error(st, env)?;
             return Ok(None);
         }
         VsplitStart::Ready(state) => state,
@@ -537,11 +545,11 @@ pub(crate) fn vsplit(
             .vsplit_resume(&mut st.eqtb, &mut st.scanner, &mut st.shipout, &mut state)?
         {
             VsplitStep::Done(outcome) => {
-                print_vsplit_packages(st, outcome);
+                print_vsplit_packages(st, env, outcome);
                 return Ok(outcome.result);
             }
             VsplitStep::InfiniteShrinkage { glue, spec } => {
-                print_vert_break_infinite_shrinkage_error(st)?;
+                print_vert_break_infinite_shrinkage_error(st, env)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
             }
         }

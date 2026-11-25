@@ -6,6 +6,7 @@ use crate::base::params::IntPar;
 use crate::base::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
 use crate::build::hyphenation::{HyphState, TrieOp};
 use crate::build::main_control::{NewChar, new_character};
+use crate::env::EngineEnv;
 use crate::fonts::{CharTag, FontState, LigChar, LigKernAction, LigOp, new_native_character};
 use crate::memory::mem::{HOLD_HEAD, MemState};
 use crate::memory::node::{
@@ -364,6 +365,7 @@ fn wrap_lig(st: &mut EngineState, r: &mut Reconstitution, rt: bool) -> Result<()
 
 fn hyphenate_native_word(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     word: &Word,
     ha: NodePtr<NativeWordNode>,
     hn: usize,
@@ -383,7 +385,7 @@ fn hyphenate_native_word(
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = st.mem.new_disc()?;
-            let hyphen = new_native_character(st, hf, u32::from(hyf_char.code()))?;
+            let hyphen = new_native_character(st, env, hf, u32::from(hyf_char.code()))?;
             st.mem[disc].pre_break = hyphen.ptr();
             st.mem[q].link = disc.ptr();
             s = disc.idx();
@@ -405,6 +407,7 @@ fn hyphenate_native_word(
 
 pub(super) fn hyphenate(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     word: &Word,
     native_ha: Option<NodePtr<NativeWordNode>>,
 ) -> Result<(), Abort> {
@@ -431,7 +434,7 @@ pub(super) fn hyphenate(
                 st.hyph.hyf[usize::try_from(pos).or_confusion("hyphen position")?] = 1;
                 s = NodePtr::from_ptr(link);
             }
-            return insert_hyphens(st, word, hn, native_ha);
+            return insert_hyphens(st, env, word, hn, native_ha);
         }
 
         let Some(next) = st.hyph.hyph_chain_next(h) else {
@@ -468,7 +471,7 @@ pub(super) fn hyphenate(
         }
     }
 
-    insert_hyphens(st, word, hn, native_ha)
+    insert_hyphens(st, env, word, hn, native_ha)
 }
 
 impl MemState {
@@ -494,6 +497,7 @@ impl MemState {
 /// every odd `hyf` position.
 fn insert_hyphens(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     word: &Word,
     hn: usize,
     native_ha: Option<NodePtr<NativeWordNode>>,
@@ -508,7 +512,7 @@ fn insert_hyphens(
     }
 
     if let Some(ha) = native_ha {
-        return hyphenate_native_word(st, word, ha, hn);
+        return hyphenate_native_word(st, env, word, ha, hn);
     }
 
     let hb = word.hb.or_confusion("hyphenate")?;
@@ -593,7 +597,7 @@ fn insert_hyphens(
                 st.hyph.hyf[i] = 0;
                 let mut minor_tail = None;
                 st.mem[disc].pre_break = None;
-                let hyf_node = new_character(st, st.hyph.hf, st.hyph.hyf_char.code())?;
+                let hyf_node = new_character(st, env, st.hyph.hf, st.hyph.hyf_char.code())?;
                 let mut saved_c = LigChar::NONE;
                 if let Some(node) = hyf_node {
                     i += 1;

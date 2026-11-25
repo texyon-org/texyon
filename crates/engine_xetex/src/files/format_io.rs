@@ -22,10 +22,9 @@ use crate::base::units::{
 };
 use crate::build::hyphenation::{BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::engine::{POOL_FREE, STRINGS_FREE};
-use crate::ffi::bridge::{
-    FileFormat, input_open, input_read, output_close, output_open, output_write,
-};
-use crate::files::io::{input_close, make_name_string, pack_job_name};
+use crate::env::EngineEnv;
+use crate::ffi::bridge::{FileFormat, input_open, output_close, output_open, output_write};
+use crate::files::io::{make_name_string, pack_job_name};
 use crate::fonts::tfm::{
     CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
     LigKernStep, LigOp, TfmMetrics,
@@ -522,9 +521,10 @@ trait FmtStream {
     }
 }
 
+/// Collects the whole format, written out once it is complete.
+#[derive(Default)]
 struct Dump {
-    handle: usize,
-    buf: Vec<u8>,
+    bytes: Vec<u8>,
 }
 
 impl FmtStream for Dump {
@@ -534,47 +534,32 @@ impl FmtStream for Dump {
         if v.is_empty() {
             return Ok(());
         }
-        self.buf.clear();
-        self.buf.reserve(v.len() * T::SIZE);
+        self.bytes.reserve(v.len() * T::SIZE);
         for &x in v.iter() {
-            x.put(&mut self.buf);
-        }
-        if !output_write(self.handle, &self.buf) {
-            return Err(Abort::Internal("could not write format file data"));
+            x.put(&mut self.bytes);
         }
         Ok(())
     }
 }
 
+/// Reads a format read into memory whole.
 struct Undump {
-    handle: usize,
-    buf: Box<[u8]>,
-}
-
-impl Undump {
-    const CHUNK: usize = 1 << 16;
-
-    fn new(handle: usize) -> Undump {
-        Undump {
-            handle,
-            buf: vec![0; Self::CHUNK].into_boxed_slice(),
-        }
-    }
+    bytes: Vec<u8>,
+    pos: usize,
 }
 
 impl FmtStream for Undump {
     const LOADING: bool = true;
 
     fn items<T: FmtItem>(&mut self, v: &mut [T]) -> Result<(), Abort> {
-        for chunk in v.chunks_mut(Self::CHUNK / T::SIZE) {
-            let bytes = &mut self.buf[..chunk.len() * T::SIZE];
-            if !input_read(self.handle, bytes) {
-                return Err(Abort::Internal("could not read format file data"));
-            }
-            for (x, b) in chunk.iter_mut().zip(bytes.chunks(T::SIZE)) {
-                *x = T::get(b).ok_or_else(bad_fmt)?;
-            }
+        let end = self.pos + v.len() * T::SIZE;
+        let Some(bytes) = self.bytes.get(self.pos..end) else {
+            return Err(Abort::Internal("could not read format file data"));
+        };
+        for (x, b) in v.iter_mut().zip(bytes.chunks(T::SIZE)) {
+            *x = T::get(b).ok_or_else(bad_fmt)?;
         }
+        self.pos = end;
         Ok(())
     }
 }
@@ -590,21 +575,21 @@ fn fonts_of<T>(v: &mut PerFont<T>, font_ptr: FontId) -> &mut [T] {
     &mut v.as_mut_slice()[FONT_BASE as usize..=font_ptr.index()]
 }
 
-pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn store_fmt_file(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.save_stack.save_ptr != SavePtr::ZERO {
         return Err(Abort::DumpInGroup);
     }
 
     st.shipout.selector = Selector::NewString;
-    print(st, " (preloaded format=");
-    print(st, st.strings.job_name);
-    print_char(st, b' ');
-    print_int(st, st.eqtb.int_par(IntPar::Year));
-    print_char(st, b'.');
-    print_int(st, st.eqtb.int_par(IntPar::Month));
-    print_char(st, b'.');
-    print_int(st, st.eqtb.int_par(IntPar::Day));
-    print_char(st, b')');
+    print(st, env, " (preloaded format=");
+    print(st, env, st.strings.job_name);
+    print_char(st, env, b' ');
+    print_int(st, env, st.eqtb.int_par(IntPar::Year));
+    print_char(st, env, b'.');
+    print_int(st, env, st.eqtb.int_par(IntPar::Month));
+    print_char(st, env, b'.');
+    print_int(st, env, st.eqtb.int_par(IntPar::Day));
+    print_char(st, env, b')');
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         Selector::LogOnly
@@ -619,41 +604,54 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.format_ident = st.strings.make_string()?;
     let path = pack_job_name(st, ".fmt")?;
 
-    let handle = output_open(&path, false);
+    let handle = output_open(env, &path, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open format output file"));
     }
 
-    print_nl(st, "Beginning to dump on file ");
+    print_nl(st, env, "Beginning to dump on file ");
     let name_string = make_name_string(st, &path)?;
-    print(st, name_string);
+    print(st, env, name_string);
 
     st.strings.flush_string();
 
-    print_nl(st, "");
-    print(st, st.strings.format_ident);
+    print_nl(st, env, "");
+    print(st, env, st.strings.format_ident);
 
     while st.input.pseudo_files.is_some() {
         st.mem.pseudo_close(&mut st.input)?;
     }
 
-    let mut dump = Dump {
-        handle,
-        buf: Vec::new(),
-    };
-    format_file(&mut dump, st)?;
+    let mut dump = Dump::default();
+    format_file(&mut dump, st, env)?;
+    if !output_write(env, handle, &dump.bytes) {
+        return Err(Abort::Internal("could not write format file data"));
+    }
     st.eqtb.set_int_par(IntPar::TracingStats, 0);
-    output_close(handle);
+    output_close(env, handle);
     Ok(())
 }
 
-pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort> {
+pub fn load_fmt_file(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    dump_name: &str,
+) -> Result<(), Abort> {
     let loc = st.input.cur_input.loc;
 
-    let handle = input_open(dump_name.as_bytes(), FileFormat::Format, false);
-    if handle == INVALID_HANDLE {
+    let Some(opened) = input_open(env, dump_name.as_bytes(), FileFormat::Format, false) else {
         return Err(Abort::Internal("cannot open the format file"));
+    };
+    let mut file = opened.source;
+    let bytes = file.read_to_end(env);
+    if file.close(env) {
+        return Err(Abort::Internal(
+            "serious internal error closing the format file",
+        ));
     }
+    let Some(bytes) = bytes else {
+        return Err(Abort::Internal("could not read format file data"));
+    };
 
     st.input.cur_input.loc = loc;
 
@@ -665,23 +663,21 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort>
         st.mem.data = JournaledVec::default();
     }
 
-    format_file(&mut Undump::new(handle), st)?;
-
-    if input_close(handle) {
-        return Err(Abort::Internal(
-            "serious internal error closing the format file",
-        ));
-    }
+    format_file(&mut Undump { bytes, pos: 0 }, st, env)?;
     Ok(())
 }
 
-fn format_file<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn format_file<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     header(s, st)?;
-    string_pool(s, st)?;
-    dynamic_memory(s, st)?;
-    table_of_equivalents(s, st)?;
-    font_info(s, st)?;
-    hyphenation_tables(s, st)?;
+    string_pool(s, st, env)?;
+    dynamic_memory(s, st, env)?;
+    table_of_equivalents(s, st, env)?;
+    font_info(s, st, env)?;
+    hyphenation_tables(s, st, env)?;
     s.constant(FORMAT_FOOTER_MAGIC)
 }
 
@@ -718,7 +714,11 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     s.constant(HYPH_PRIME)
 }
 
-fn string_pool<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn string_pool<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let strings = &mut st.strings;
     s.size(
         &mut strings.pool_ptr,
@@ -752,15 +752,19 @@ fn string_pool<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abor
         strings.init_str_ptr = str_ptr;
         strings.init_pool_ptr = pool_ptr;
     } else {
-        print_ln(st);
-        print_int(st, str_ptr.raw());
-        print(st, " strings of total length ");
-        print_int(st, pool_ptr.raw());
+        print_ln(st, env);
+        print_int(st, env, str_ptr.raw());
+        print(st, env, " strings of total length ");
+        print_int(st, env, pool_ptr.raw());
     }
     Ok(())
 }
 
-fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn dynamic_memory<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let mem = &mut st.mem;
     let too_big = || Abort::Internal("mem exceeds the format's limit");
     let mut words = i32::try_from(mem.data.len()).map_err(|_| too_big())?;
@@ -776,9 +780,9 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     glue_specs(s, &mut mem.glue)?;
 
     if !S::LOADING {
-        print_ln(st);
-        print_int(st, words);
-        print(st, " memory locations dumped");
+        print_ln(st, env);
+        print_int(st, env, words);
+        print(st, env, " memory locations dumped");
     }
     Ok(())
 }
@@ -916,7 +920,11 @@ fn inter_char_toks<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(), 
     Ok(())
 }
 
-fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn table_of_equivalents<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
     let named = CsId::FIRST.index()..=CsId::top(eqtb.hash_high).index();
     runs(
@@ -996,14 +1004,18 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     s.int(&mut eqtb.cs_count)?;
 
     if !S::LOADING {
-        print_ln(st);
-        print_int(st, st.eqtb.cs_count);
-        print(st, " multiletter control sequences");
+        print_ln(st, env);
+        print_int(st, env, st.eqtb.cs_count);
+        print(st, env, " multiletter control sequences");
     }
     Ok(())
 }
 
-fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn font_info<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let max_str = st.strings.str_ptr;
     let fonts = &mut st.fonts;
     s.size(
@@ -1082,7 +1094,7 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     if S::LOADING {
         check_font_words(&st.eqtb, st.fonts.font_ptr)?;
     } else {
-        print_dumped_fonts(st)?;
+        print_dumped_fonts(st, env)?;
     }
     Ok(())
 }
@@ -1168,12 +1180,12 @@ fn check_font_words(eqtb: &EqtbState, font_ptr: FontId) -> Result<(), Abort> {
     }
 }
 
-fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
+fn print_dumped_fonts(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let font_ptr = st.fonts.font_ptr;
     for f in iter::once(NULL_FONT).chain(font_ptr.loaded()) {
-        print_nl(st, "\\font");
-        print_esc(st, st.eqtb.font_id_text(f));
-        print_char(st, b'=');
+        print_nl(st, env, "\\font");
+        print_esc(st, env, st.eqtb.font_id_text(f));
+        print_char(st, env, b'=');
 
         let font_name = st.fonts.font_name[f];
         let font_area = st.fonts.font_area[f];
@@ -1181,9 +1193,10 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
             || font_area == OTGR_FONT_FLAG
             || st.fonts.font_mapping[f].is_some()
         {
-            print_file_name(st, font_name, EMPTY_STRING, EMPTY_STRING);
+            print_file_name(st, env, font_name, EMPTY_STRING, EMPTY_STRING);
             error(
                 st,
+                env,
                 "Can't \\dump a format with native fonts or font-mappings",
                 &[
                     "You really, really don't want to do this.",
@@ -1192,30 +1205,34 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
                 ],
             )?;
         } else {
-            print_file_name(st, font_name, font_area, EMPTY_STRING);
+            print_file_name(st, env, font_name, font_area, EMPTY_STRING);
         }
 
         let font_size = st.fonts.font_size[f];
         if font_size != st.fonts.font_dsize[f] {
-            print(st, " at ");
-            print_scaled(st, font_size);
-            print(st, "pt");
+            print(st, env, " at ");
+            print_scaled(st, env, font_size);
+            print(st, env, "pt");
         }
     }
 
-    print_ln(st);
-    print_int(st, st.fonts.fmem_ptr - 7);
-    print(st, " words of font info for ");
-    print_int(st, font_ptr.raw());
+    print_ln(st, env);
+    print_int(st, env, st.fonts.fmem_ptr - 7);
+    print(st, env, " words of font info for ");
+    print_int(st, env, font_ptr.raw());
     if font_ptr.raw() != FONT_BASE + 1 {
-        print(st, " preloaded fonts");
+        print(st, env, " preloaded fonts");
     } else {
-        print(st, " preloaded font");
+        print(st, env, " preloaded font");
     }
     Ok(())
 }
 
-fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
+fn hyphenation_tables<S: FmtStream>(
+    s: &mut S,
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<(), Abort> {
     let hyph = &mut st.hyph;
     s.size(
         &mut hyph.hyph_count,
@@ -1277,12 +1294,12 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
         }
 
         let hyph_count = hyph.hyph_count;
-        print_ln(st);
-        print_int(st, hyph_count);
+        print_ln(st, env);
+        print_int(st, env, hyph_count);
         if hyph_count != 1 {
-            print(st, " hyphenation exceptions");
+            print(st, env, " hyphenation exceptions");
         } else {
-            print(st, " hyphenation exception");
+            print(st, env, " hyphenation exception");
         }
         if st.hyph.trie_not_ready {
             st.hyph.init_trie()?;
@@ -1345,25 +1362,25 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
         }
         hyph.trie_not_ready = false;
     } else {
-        print_nl(st, "Hyphenation trie of length ");
-        print_int(st, trie_max.raw());
-        print(st, " has ");
-        print_int(st, op_count);
+        print_nl(st, env, "Hyphenation trie of length ");
+        print_int(st, env, trie_max.raw());
+        print(st, env, " has ");
+        print_int(st, env, op_count);
         if op_count != 1 {
-            print(st, " ops");
+            print(st, env, " ops");
         } else {
-            print(st, " op");
+            print(st, env, " op");
         }
-        print(st, " out of ");
-        print_int(st, TRIE_OP_SIZE);
+        print(st, env, " out of ");
+        print_int(st, env, TRIE_OP_SIZE);
 
         for k in (0..=BIGGEST_LANG).rev() {
             let mut used = i32::from(st.hyph.trie_used[k as usize]);
             if used > 0 {
-                print_nl(st, "  ");
-                print_int(st, used);
-                print(st, " for language ");
-                print_int(st, k);
+                print_nl(st, env, "  ");
+                print_int(st, env, used);
+                print(st, env, " for language ");
+                print_int(st, env, k);
                 s.int(&mut { k })?;
                 s.int(&mut used)?;
             }
@@ -1377,6 +1394,7 @@ mod tests {
     use super::*;
     use crate::base::cmd::Cmd;
     use crate::base::consts::LEVEL_ONE;
+    use crate::env::test_env;
     use crate::fonts::tfm::{
         CharInfo, CharTag, ExtIdx, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
     };
@@ -1449,21 +1467,23 @@ mod tests {
 
     #[test]
     fn font_info_load_restores_font_ptr() {
+        let env = &mut test_env();
         let mut src = font_state();
         src.fonts.font_ptr = NULL_FONT;
         src.fonts.font_size[NULL_FONT] = Scaled::from_raw(12);
         let mut dump = VecDump::default();
-        font_info(&mut dump, &mut src).expect("dump");
+        font_info(&mut dump, &mut src, env).expect("dump");
 
         let mut dst = font_state();
         dst.fonts.font_ptr = FontId::new(1);
-        font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
+        font_info(&mut SliceUndump(&dump.0), &mut dst, env).expect("load");
         assert_eq!(dst.fonts.font_ptr, NULL_FONT);
         assert_eq!(dst.fonts.font_size[NULL_FONT], Scaled::from_raw(12));
     }
 
     #[test]
     fn font_metrics_round_trip() {
+        let env = &mut test_env();
         let pt = |v: i32| Scaled::from_raw(v * 65_536);
         let ci = |tag| CharInfo {
             width: pt(5),
@@ -1516,10 +1536,10 @@ mod tests {
         src.fonts.metrics[NULL_FONT] = metrics.clone();
         src.fonts.params[NULL_FONT] = params.clone();
         let mut dump = VecDump::default();
-        font_info(&mut dump, &mut src).expect("dump");
+        font_info(&mut dump, &mut src, env).expect("dump");
 
         let mut dst = font_state();
-        font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
+        font_info(&mut SliceUndump(&dump.0), &mut dst, env).expect("load");
         assert_eq!(dst.fonts.metrics[NULL_FONT], metrics);
         assert_eq!(dst.fonts.params[NULL_FONT], params);
     }

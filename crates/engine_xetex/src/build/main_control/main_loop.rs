@@ -10,6 +10,7 @@ use crate::base::token::{Token, TokenList};
 use crate::base::units::{FontId, MemIdx, MemPtr};
 use crate::build::extension::append_src_special;
 use crate::build::linebreak::do_locale_linebreaks;
+use crate::env::EngineEnv;
 use crate::fonts::{
     CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
 };
@@ -34,7 +35,10 @@ fn inter_char_toks(st: &EngineState, first: i32, second: i32) -> Option<TokenLis
     (!list.is_null()).then_some(list)
 }
 
-pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, Abort> {
+pub(super) fn insert_boundary_inter_char_toks(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+) -> Result<bool, Abort> {
     if !inter_char_tokens_enabled(st) {
         return Ok(false);
     }
@@ -51,11 +55,16 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
         Some(cs) => Token::from_cs(cs),
     };
     back_input(st)?;
-    begin_token_list(st, list, TokenType::InterChar)?;
+    begin_token_list(st, env, list, TokenType::InterChar)?;
     Ok(true)
 }
 
-fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32, chr: i32) -> Result<bool, Abort> {
+fn insert_inter_char_toks_before(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    sc: i32,
+    chr: i32,
+) -> Result<bool, Abort> {
     if !inter_char_tokens_enabled(st) || sc == CHAR_CLASS_LIMIT {
         return Ok(false);
     }
@@ -76,7 +85,7 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32, chr: i32) -> Res
     st.scanner.cur_tok = Token::new(cmd, chr);
     back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::BackedUpChar);
-    begin_token_list(st, list, TokenType::InterChar)?;
+    begin_token_list(st, env, list, TokenType::InterChar)?;
     Ok(true)
 }
 
@@ -185,7 +194,12 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0
 }
 
-fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bool, Abort> {
+fn main_loop_native(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    mf: FontId,
+    mut chr: i32,
+) -> Result<bool, Abort> {
     if st.input.cur_list.mode.is_outer()
         && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()?
     {
@@ -199,7 +213,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
     let inserted_toks = loop {
         let sc = adjust_space_factor(st, chr)?;
         let was_boundary = st.interchar.prev_class == CHAR_CLASS_LIMIT - 1;
-        if insert_inter_char_toks_before(st, sc, chr)? {
+        if insert_inter_char_toks_before(st, env, sc, chr)? {
             if was_boundary {
                 return Ok(true);
             }
@@ -223,21 +237,21 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
             h = st.scanner.native_len;
         }
 
-        get_next(st)?;
+        get_next(st, env)?;
         if let Some(c) = st.scanner.cur.char_code() {
             chr = c;
             continue;
         }
-        x_token(st)?;
+        x_token(st, env)?;
         if let Some(c) = st.scanner.cur.char_code() {
             chr = c;
             continue;
         }
         if st.scanner.cur.cmd() == Cmd::CharNum {
-            chr = scan_usv_num(st)?;
+            chr = scan_usv_num(st, env)?;
             continue;
         }
-        break insert_boundary_inter_char_toks(st)?;
+        break insert_boundary_inter_char_toks(st, env)?;
     };
 
     if let Some(mapping) = st.fonts.font_mapping[mf].clone() {
@@ -267,7 +281,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                 i += 1;
             }
             if st.fonts.map_char_to_glyph(mf, c)? == 0 {
-                char_warning(st, mf, c)?;
+                char_warning(st, env, mf, c)?;
             }
         }
     }
@@ -294,7 +308,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                     let c = st.scanner.native_text[(start + i) as usize];
                     st.scanner.push_native_text(c);
                 }
-                do_locale_linebreaks(st, mf, saved_len, remaining)?;
+                do_locale_linebreaks(st, env, mf, saved_len, remaining)?;
                 st.scanner.native_len = saved_len;
                 remaining = saved_len - h - start;
                 start = h;
@@ -306,7 +320,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                 pp = st.input.cur_list.tail;
                 ppp = st.mem.predecessor(ppp, Some(pp))?;
             } else {
-                do_locale_linebreaks(st, mf, start, h)?;
+                do_locale_linebreaks(st, env, mf, start, h)?;
                 start += h;
                 remaining -= h;
                 h = past_next_hyphen(st, mf, start, remaining);
@@ -535,6 +549,7 @@ fn cur_l_info(st: &mut EngineState, lk: &LigKern) -> Option<CharInfo> {
 /// came right before it. Returns true to go to `big_switch`, false to go to `reswitch`.
 pub(super) fn main_control_main_loop(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     chr: i32,
     cancel_boundary: bool,
 ) -> Result<bool, Abort> {
@@ -548,11 +563,11 @@ pub(super) fn main_control_main_loop(
 
     let mf = st.eqtb.cur_font();
     if st.fonts.is_native_font(mf) {
-        return main_loop_native(st, mf, chr);
+        return main_loop_native(st, env, mf, chr);
     }
 
     let sc = adjust_space_factor(st, chr)?;
-    if insert_inter_char_toks_before(st, sc, chr)? {
+    if insert_inter_char_toks_before(st, env, sc, chr)? {
         return Ok(true);
     }
     note_char_class(st, sc);
@@ -633,7 +648,7 @@ pub(super) fn main_control_main_loop(
                 lk.ligature_present = true;
                 if lk.lig_stack.is_none() {
                     if lig_ptr.is_some() {
-                        lookahead(st, &mut lk)?;
+                        lookahead(st, env, &mut lk)?;
                         continue;
                     }
                     lk.cur_r = lk.bchar;
@@ -657,12 +672,12 @@ pub(super) fn main_control_main_loop(
         };
         let node = lk.lookahead_node()?;
         if !exists {
-            char_warning(st, lk.font, lk.chr)?;
+            char_warning(st, env, lk.font, lk.chr)?;
             node.free(&mut st.mem);
             return Ok(true);
         }
         st.input.cur_list.tail_append(&mut st.mem, node);
-        lookahead(st, &mut lk)?;
+        lookahead(st, env, &mut lk)?;
     }
 }
 
@@ -765,10 +780,10 @@ fn lig_kern_program(
 /// `lig_stack` and `cur_r`. Anything else ends the word, and so do
 /// inter-character tokens inserted before the character.
 #[inline(always)]
-fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
-    get_next(st)?;
+fn lookahead(st: &mut EngineState, env: &mut EngineEnv, lk: &mut LigKern) -> Result<(), Abort> {
+    get_next(st, env)?;
     if st.scanner.cur.char_code().is_none() {
-        x_token(st)?;
+        x_token(st, env)?;
     }
     if let Some(c) = st.scanner.cur.char_code() {
         lk.chr = c;
@@ -780,12 +795,12 @@ fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
             lk.end_word();
             return Ok(());
         }
-        lk.chr = scan_char_num(st)?;
+        lk.chr = scan_char_num(st, env)?;
     }
 
     let sc = adjust_space_factor(st, lk.chr)?;
     let was_boundary = st.interchar.prev_class == CHAR_CLASS_LIMIT - 1;
-    if insert_inter_char_toks_before(st, sc, lk.chr)? {
+    if insert_inter_char_toks_before(st, env, sc, lk.chr)? {
         if !was_boundary {
             st.interchar.prev_class = CHAR_CLASS_LIMIT - 1;
         }

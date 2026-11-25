@@ -13,6 +13,7 @@ use crate::base::consts::{CLOSED, JUST_OPEN, NORMAL};
 use crate::base::params::IntPar;
 use crate::base::token::{Build, TokCursor, Token, TokenList};
 use crate::base::units::{BufPos, PoolPos, StrNumber};
+use crate::env::EngineEnv;
 use crate::ffi::bridge::output_flush;
 use crate::files::io::{FileSlot, input_slot_line, u_close};
 use crate::memory::mem::MemState;
@@ -88,9 +89,9 @@ pub(crate) fn finish_line(st: &mut EngineState) {
     st.input.cur_input.loc = st.input.cur_input.start;
 }
 
-fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
+fn close_read_file(st: &mut EngineState, env: &mut EngineEnv, m: usize) -> Result<(), Abort> {
     let slot = mem::take(&mut st.input.read_file[m]);
-    if u_close(slot) {
+    if u_close(env, slot) {
         return Err(Abort::InputClose);
     }
     st.input.read_open[m] = CLOSED;
@@ -99,6 +100,7 @@ fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
 
 pub(crate) fn read_toks(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     n: i32,
     r: CsId,
     line: bool,
@@ -127,9 +129,9 @@ pub(crate) fn read_toks(
             // A terminal read in a mode that would prompt meets the end of the terminal's input.
             let fatal = if st.errors.interaction > InteractionMode::Nonstop {
                 if n >= 0 {
-                    print_ln(st);
-                    sprint_cs(st, Some(r));
-                    print(st, "=");
+                    print_ln(st, env);
+                    sprint_cs(st, env, Some(r));
+                    print(st, env, "=");
                 }
                 "End of file on the terminal!"
             } else {
@@ -139,20 +141,21 @@ pub(crate) fn read_toks(
             st.input.cur_input.limit = BufPos::ZERO;
             return Err(Abort::Fatal(fatal));
         } else if st.input.read_open[m] == JUST_OPEN {
-            if input_slot_line(st, FileSlot::Read(m))? {
+            if input_slot_line(st, env, FileSlot::Read(m))? {
                 st.input.read_open[m] = NORMAL as u8;
             } else {
-                close_read_file(st, m)?;
+                close_read_file(st, env, m)?;
             }
         } else {
-            if !input_slot_line(st, FileSlot::Read(m))? {
-                close_read_file(st, m)?;
+            if !input_slot_line(st, env, FileSlot::Read(m))? {
+                close_read_file(st, env, m)?;
                 if st.scanner.align_state != 1_000_000 {
-                    runaway(st);
+                    runaway(st, env);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = BufPos::ZERO;
                     error(
                         st,
+                        env,
                         ("File ended within ", Esc("read")),
                         &[r"This \read has unbalanced braces."],
                     )?;
@@ -179,13 +182,13 @@ pub(crate) fn read_toks(
             }
         } else {
             loop {
-                get_token(st)?;
+                get_token(st, env)?;
                 if st.scanner.cur_tok == Token::ZERO {
                     break;
                 }
                 if st.scanner.align_state < 1_000_000 {
                     loop {
-                        get_token(st)?;
+                        get_token(st, env)?;
                         if st.scanner.cur_tok == Token::ZERO {
                             break;
                         }
@@ -196,7 +199,7 @@ pub(crate) fn read_toks(
                 st.mem.tokens.push(&b, st.scanner.cur_tok)?;
             }
         }
-        end_file_reading(st)?;
+        end_file_reading(st, env)?;
 
         if st.scanner.align_state == 1_000_000 {
             break;
@@ -210,7 +213,11 @@ pub(crate) fn read_toks(
     Ok(list)
 }
 
-fn tokens_to_string(st: &mut EngineState, list: TokenList) -> Result<StrNumber, Abort> {
+fn tokens_to_string(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    list: TokenList,
+) -> Result<StrNumber, Abort> {
     if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
@@ -221,27 +228,32 @@ fn tokens_to_string(st: &mut EngineState, list: TokenList) -> Result<StrNumber, 
     st.shipout.selector = Selector::NewString;
     let arg = st.mem.tokens.cursor(list);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    show_token_list(st, arg, TokCursor::END, l);
+    show_token_list(st, env, arg, TokCursor::END, l);
     st.shipout.selector = st.shipout.old_setting;
     st.strings.make_string()
 }
 
-pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Result<(), Abort> {
+pub(crate) fn the_toks(
+    st: &mut EngineState,
+    env: &mut EngineEnv,
+    code: TheCode,
+    out: &Build,
+) -> Result<(), Abort> {
     if code != TheCode::The {
-        let text = scan_general_text(st)?;
+        let text = scan_general_text(st, env)?;
         if code == TheCode::Unexpanded {
             return st.mem.tokens.push_list(out, text);
         }
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
-        token_show(st, text);
+        token_show(st, env, text);
         st.mem.tokens.flush(text);
         st.shipout.selector = old_setting;
         return st.mem.str_toks_cat(&mut st.strings, b, None, out);
     }
-    get_x_token(st)?;
-    let val = scan_something_internal(st, ValueLevel::Tok, false)?;
+    get_x_token(st, env)?;
+    let val = scan_something_internal(st, env, ValueLevel::Tok, false)?;
     if let CurVal::Ident(_) | CurVal::Tok(_) = val {
         match val {
             CurVal::Ident(loc) => st.mem.tokens.push(out, Token::from_cs(loc))?,
@@ -259,14 +271,14 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Resu
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
         match val {
-            CurVal::Int(n) => print_int(st, n),
+            CurVal::Int(n) => print_int(st, env, n),
             CurVal::Dimen(d) => {
-                print_scaled(st, d);
-                print(st, "pt");
+                print_scaled(st, env, d);
+                print(st, env, "pt");
             }
             CurVal::Glue(spec) | CurVal::Mu(spec) => {
                 let unit = if let CurVal::Mu(_) = val { "mu" } else { "pt" };
-                print_spec(st, spec, Some(unit));
+                print_spec(st, env, spec, Some(unit));
                 st.mem.delete_glue_ref(spec);
             }
             CurVal::Ident(_) | CurVal::Tok(_) => {}
@@ -277,6 +289,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Resu
 }
 pub(crate) fn scan_toks(
     st: &mut EngineState,
+    env: &mut EngineEnv,
     macro_def: bool,
     xpand: bool,
 ) -> Result<TokenList, Abort> {
@@ -293,13 +306,13 @@ pub(crate) fn scan_toks(
     'found: {
         if macro_def {
             let ended_with_brace = loop {
-                get_token(st)?;
+                get_token(st, env)?;
                 if st.scanner.cur_tok.is_brace() {
                     break false;
                 }
                 if let Command::MacParam(c) = st.scanner.cur {
                     let s = Token::match_(c.raw());
-                    get_token(st)?;
+                    get_token(st, env)?;
                     if st.scanner.cur_tok.is_left_brace() {
                         hash_brace = st.scanner.cur_tok;
                         st.mem.tokens.push(&b, st.scanner.cur_tok)?;
@@ -309,6 +322,7 @@ pub(crate) fn scan_toks(
                     if params == 9 {
                         error(
                             st,
+                            env,
                             "You already have nine parameters",
                             &[
                                 "I'm going to ignore the # sign you just used,",
@@ -321,6 +335,7 @@ pub(crate) fn scan_toks(
                     if st.scanner.cur_tok != Token::other(b'0' + params) {
                         back_error(
                             st,
+                            env,
                             "Parameters must be numbered consecutively",
                             &[
                                 "I've inserted the digit you should have used after the #.",
@@ -338,6 +353,7 @@ pub(crate) fn scan_toks(
                     st.scanner.align_state += 1;
                     error(
                         st,
+                        env,
                         "Missing { inserted",
                         &[
                             r"Where was the left brace? You said something like `\def\a}',",
@@ -348,14 +364,14 @@ pub(crate) fn scan_toks(
                 }
             }
         } else {
-            scan_left_brace(st)?;
+            scan_left_brace(st, env)?;
         }
 
         let mut unbalance: i32 = 1;
         loop {
             if xpand {
                 loop {
-                    get_next(st)?;
+                    get_next(st, env)?;
                     let body = st.scanner.cur.macro_body();
                     if body.is_some_and(|b| st.mem.is_protected_macro(b)) {
                         st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
@@ -364,17 +380,17 @@ pub(crate) fn scan_toks(
                         break;
                     }
                     if let Command::The(code) = st.scanner.cur {
-                        the_toks(st, code, &b)?;
+                        the_toks(st, env, code, &b)?;
                     } else {
-                        expand(st)?;
+                        expand(st, env)?;
                     }
                 }
-                x_token(st)?;
+                x_token(st, env)?;
             } else {
                 if super::next::copy_group_tokens(st, &b, &mut unbalance, macro_def)? {
                     break 'found;
                 }
-                get_token(st)?;
+                get_token(st, env)?;
             }
 
             if st.scanner.cur_tok.is_brace() {
@@ -389,9 +405,9 @@ pub(crate) fn scan_toks(
             } else if st.scanner.cur.cmd() == Cmd::MacParam && macro_def {
                 let s = st.scanner.cur_tok;
                 if xpand {
-                    get_x_token(st)?;
+                    get_x_token(st, env)?;
                 } else {
-                    get_token(st)?;
+                    get_token(st, env)?;
                 }
                 if st.scanner.cur.cmd() != Cmd::MacParam {
                     let n = match st.scanner.cur_tok.char() {
@@ -403,6 +419,7 @@ pub(crate) fn scan_toks(
                     } else {
                         back_error(
                             st,
+                            env,
                             (
                                 "Illegal parameter number in definition of ",
                                 CsName(st.scanner.warning_index),
@@ -429,11 +446,11 @@ pub(crate) fn scan_toks(
     Ok(list)
 }
 
-pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
-    let text = scan_general_text(st)?;
+pub(crate) fn pseudo_start(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    let text = scan_general_text(st, env)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    token_show(st, text);
+    token_show(st, env, text);
     st.shipout.selector = old_setting;
     st.mem.tokens.flush(text);
 
@@ -495,14 +512,14 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.eqtb.int_par(IntPar::TracingScanTokens) > 0 {
         if st.shipout.term_offset > st.config.max_print_line - 3 {
-            print_ln(st);
+            print_ln(st, env);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            print_char(st, b' ');
+            print_char(st, env, b' ');
         }
         st.input.cur_input.name = InputName::Pseudo { traced: true };
-        print(st, "( ");
+        print(st, env, "( ");
         st.input.open_parens += 1;
-        output_flush(st.shipout.rust_stdout);
+        output_flush(env, st.shipout.rust_stdout);
     } else {
         st.input.cur_input.name = InputName::Pseudo { traced: false };
         st.input.cur_input.synctex_tag = 0;
@@ -510,16 +527,16 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
     Ok(())
 }
-fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
+fn scan_general_text(st: &mut EngineState, env: &mut EngineEnv) -> Result<TokenList, Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
     st.scanner.scanner_status = ScannerStatus::Absorbing;
     st.scanner.warning_index = st.scanner.cur_cs;
     let b = st.mem.tokens.begin()?;
-    scan_left_brace(st)?;
+    scan_left_brace(st, env)?;
     let mut unbalance: i32 = 1;
     loop {
-        get_token(st)?;
+        get_token(st, env)?;
         if st.scanner.cur_tok.is_brace() {
             if st.scanner.cur.cmd() < Cmd::RightBrace {
                 unbalance += 1;
@@ -537,23 +554,23 @@ fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     st.mem.tokens.finish(b)
 }
 
-pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {
-    scan_toks(st, false, true)?;
+pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
+    scan_toks(st, env, false, true)?;
     Ok(())
 }
 
-fn scan_toks_to_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
-    scan_toks(st, false, true)?;
-    let s = tokens_to_string(st, st.scanner.def_ref)?;
+fn scan_toks_to_string(st: &mut EngineState, env: &mut EngineEnv) -> Result<StrNumber, Abort> {
+    scan_toks(st, env, false, true)?;
+    let s = tokens_to_string(st, env, st.scanner.def_ref)?;
     st.mem.tokens.delete_ref(st.scanner.def_ref);
     Ok(s)
 }
 
-pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn compare_strings(st: &mut EngineState, env: &mut EngineEnv) -> Result<i32, Abort> {
     let save_cur_cs = st.scanner.cur_cs;
-    let s1 = scan_toks_to_string(st)?;
+    let s1 = scan_toks_to_string(st, env)?;
     st.scanner.cur_cs = save_cur_cs;
-    let s2 = scan_toks_to_string(st)?;
+    let s2 = scan_toks_to_string(st, env)?;
 
     let range = |s: StrNumber| &st.strings.str_pool[st.strings.str_range(s)];
     let result = match range(s1).cmp(range(s2)) {

@@ -16,6 +16,7 @@ use crate::build::packaging::{
     AdjustTails, PackOrigin, PackSpec, hpack, hpack_with, vpackage, vpackage_with,
 };
 use crate::build::pagebuilder::build_page;
+use crate::env::EngineEnv;
 use crate::memory::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, MemState, ZERO_GLUE, push_nest};
 use crate::memory::node::{
     AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, GlueRatio, HeadNode, NodePtr,
@@ -33,7 +34,7 @@ use crate::tables::cs::Frozen;
 use crate::tables::eqtb::define;
 use crate::tables::save::{GroupCode, unsave};
 
-pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn align_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
         let help: &[&'static str] = if st.scanner.cur_tok == Token::tab(b'&') {
             &[
@@ -53,7 +54,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
                 "might try typing `S' now just to see what is salvageable.",
             ]
         };
-        error(st, ("Misplaced ", st.scanner.cur), help)?;
+        error(st, env, ("Misplaced ", st.scanner.cur), help)?;
     } else {
         back_input(st)?;
         let message = if st.scanner.align_state < 0 {
@@ -67,6 +68,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
         };
         ins_error(
             st,
+            env,
             message,
             &[
                 "I've put in what seems to be necessary to fix",
@@ -77,9 +79,10 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     }
     Ok(())
 }
-pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn no_align_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         ("Misplaced ", Esc("noalign")),
         &[
             r"I expect to see \noalign only after the \cr of",
@@ -87,9 +90,10 @@ pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
         ],
     )
 }
-pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn omit_error(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     error(
         st,
+        env,
         ("Misplaced ", Esc("omit")),
         &[
             r"I expect to see \omit only after tab marks or the \cr of",
@@ -97,15 +101,15 @@ pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
         ],
     )
 }
-fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
+fn fin_align(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::Align {
         return Err(Abort::Confusion("align1"));
     }
-    unsave(st)?;
+    unsave(st, env)?;
     if st.save_stack.cur_group != GroupCode::Align {
         return Err(Abort::Confusion("align0"));
     }
-    unsave(st)?;
+    unsave(st, env)?;
 
     let in_display = st.input.nest[st.input.nest.len() - 1].mode.name() == ModeName::DisplayMath;
     let o = if in_display {
@@ -145,7 +149,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let p = if st.input.cur_list.mode.name() == ModeName::InternalVertical {
         let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
-        let packed = hpack_with(st, head, spec, origin, None)?.r_box;
+        let packed = hpack_with(st, env, head, spec, origin, None)?.r_box;
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, rule_save);
         packed
     } else {
@@ -153,7 +157,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             mem[q].height = mem[q].width;
             mem[q].width = Scaled::ZERO;
         });
-        let packed = vpackage_with(st, head, spec, MAX_DIMEN, origin)?.r_box;
+        let packed = vpackage_with(st, env, head, spec, MAX_DIMEN, origin)?.r_box;
         st.mem.for_each_preamble_column(|mem, q| {
             mem[q].width = mem[q].height;
             mem[q].height = Scaled::ZERO;
@@ -297,7 +301,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 if o != Scaled::ZERO {
                     let next = st.mem[rule].link;
                     st.mem[rule].link = None;
-                    let boxed = hpack(st, rule.ptr(), PackSpec::NATURAL)?;
+                    let boxed = hpack(st, env, rule.ptr(), PackSpec::NATURAL)?;
                     let node = &mut st.mem[boxed];
                     node.shift_amount = o;
                     node.link = next;
@@ -320,10 +324,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.pop_nest(&mut st.input)?;
 
     if st.input.cur_list.mode.name() == ModeName::DisplayMath {
-        do_assignments(st)?;
+        do_assignments(st, env)?;
         if st.scanner.cur.cmd() != Cmd::MathShift {
             back_error(
                 st,
+                env,
                 "Missing $$ inserted",
                 &[
                     r"Displays can use special alignments (like \eqalignno)",
@@ -331,7 +336,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 ],
             )?;
         } else {
-            check_display_end(st)?;
+            check_display_end(st, env)?;
         }
         st.mem.flush_node_list(st.input.cur_list.e_tex_aux)?;
         st.mem.pop_nest(&mut st.input)?;
@@ -353,7 +358,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             return Err(Abort::Confusion("align aux"));
         };
         st.input.cur_list.set_prev_depth(prev_depth)?;
-        resume_after_display(st)?;
+        resume_after_display(st, env)?;
     } else {
         match (&mut st.input.cur_list.mode, aux_save) {
             (
@@ -384,7 +389,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             st.input.cur_list.tail = rows_tail;
         }
         if st.input.cur_list.mode.name() == ModeName::Vertical {
-            build_page(st)?;
+            build_page(st, env)?;
         }
     }
     Ok(())
@@ -498,13 +503,13 @@ impl MemState {
     }
 }
 
-pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn align_peek(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
         st.scanner.align_state = 1_000_000;
-        get_x_non_blank_or_protected(st)?;
+        get_x_non_blank_or_protected(st, env)?;
         match st.scanner.cur.cmd() {
             Cmd::NoAlign => {
-                scan_left_brace(st)?;
+                scan_left_brace(st, env)?;
                 st.save_stack
                     .new_save_level(GroupCode::NoAlign, st.mem.line)?;
                 if st.input.cur_list.mode.name() == ModeName::InternalVertical {
@@ -512,33 +517,33 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 return Ok(());
             }
-            Cmd::RightBrace => return fin_align(st),
+            Cmd::RightBrace => return fin_align(st, env),
             Cmd::CarRet if st.scanner.cur == Command::CarRet { crcr: true } => {}
             _ => {
                 init_row(st)?;
-                return init_col(st);
+                return init_col(st, env);
             }
         }
     }
 }
 
-fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
+fn get_x_non_blank_or_protected(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
-        get_x_or_protected(st)?;
+        get_x_or_protected(st, env)?;
         if st.scanner.cur.cmd() != Cmd::Spacer {
             return Ok(());
         }
     }
 }
 
-fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
+fn get_preamble_token(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     loop {
-        get_token(st)?;
+        get_token(st, env)?;
         while st.scanner.cur == Command::TabMark(TabMarkCode::SPAN) {
-            get_token(st)?;
+            get_token(st, env)?;
             if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
-                expand(st)?;
-                get_token(st)?;
+                expand(st, env)?;
+                get_token(st, env)?;
             }
         }
         if st.scanner.cur.cmd() == Cmd::Endv {
@@ -549,8 +554,8 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
         if st.scanner.cur != Command::AssignGlue(GluePar::TabSkip.loc()) {
             return Ok(());
         }
-        scan_optional_equals(st)?;
-        let g = scan_glue(st, ValueLevel::Glue)?;
+        scan_optional_equals(st, env)?;
+        let g = scan_glue(st, env, ValueLevel::Glue)?;
         let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
         define(st, global, GluePar::TabSkip.loc(), g)?;
     }
@@ -593,14 +598,14 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     init_span(st, st.scanner.cur_align)
 }
 
-fn init_col(st: &mut EngineState) -> Result<(), Abort> {
+fn init_col(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let column = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_align).or_confusion("align")?;
     st.mem[column].extra_info = i32::from(st.scanner.cur.cmd());
     if st.scanner.cur.cmd() == Cmd::Omit {
         st.scanner.align_state = 0;
     } else {
         back_input(st)?;
-        begin_token_list(st, st.mem[column].u_part, TokenType::UTemplate)?;
+        begin_token_list(st, env, st.mem[column].u_part, TokenType::UTemplate)?;
     }
     Ok(())
 }
@@ -682,7 +687,7 @@ enum SpanAt {
     After(NodePtr<SpanNode>),
 }
 
-fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
+fn fin_col(st: &mut EngineState, env: &mut EngineEnv) -> Result<bool, Abort> {
     let cur_align = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_align).or_confusion("endv")?;
     let q = st.mem[cur_align].link.or_confusion("endv")?;
     if st.scanner.align_state < 500_000 {
@@ -714,6 +719,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[cur_align].extra_info = CR_CODE;
             error(
                 st,
+                env,
                 ("Extra alignment tab has been changed to ", Esc("cr")),
                 &[
                     r"You have given more \span or & marks than there were",
@@ -724,7 +730,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         }
     }
     if st.mem[cur_align].extra_info != SPAN_CODE {
-        unsave(st)?;
+        unsave(st, env)?;
         st.save_stack
             .new_save_level(GroupCode::Align, st.mem.line)?;
         let head = st.input.cur_list.head.link(&st.mem);
@@ -735,6 +741,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             };
             let packed = hpack_with(
                 st,
+                env,
                 head,
                 PackSpec::NATURAL,
                 PackOrigin::Here,
@@ -744,8 +751,14 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.scanner.cur_pre_tail = adjust.pre;
             (packed, st.mem[packed.r_box].width)
         } else {
-            let packed =
-                vpackage_with(st, head, PackSpec::NATURAL, Scaled::ZERO, PackOrigin::Here)?;
+            let packed = vpackage_with(
+                st,
+                env,
+                head,
+                PackSpec::NATURAL,
+                Scaled::ZERO,
+                PackOrigin::Here,
+            )?;
             (packed, st.mem[packed.r_box].height)
         };
         let u = packed.r_box;
@@ -803,16 +816,16 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         init_span(st, p)?;
     }
     st.scanner.align_state = 1_000_000;
-    get_x_non_blank_or_protected(st)?;
+    get_x_non_blank_or_protected(st, env)?;
     st.scanner.cur_align = p;
-    init_col(st)?;
+    init_col(st, env)?;
     Ok(false)
 }
 
-fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
+fn fin_row(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
-        let row = hpack(st, head, PackSpec::NATURAL)?;
+        let row = hpack(st, env, head, PackSpec::NATURAL)?;
         st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail)?;
@@ -825,7 +838,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         }
         row
     } else {
-        let row = vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
+        let row = vpackage(st, env, head, PackSpec::NATURAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, row);
         st.input.cur_list.set_space_factor(1000)?;
@@ -833,11 +846,11 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     };
     let unset = p.into_unset(&mut st.mem);
     st.mem[unset].glue_stretch = Scaled::ZERO;
-    begin_every(st, TokPar::EveryCr, TokenType::EveryCr)?;
-    align_peek(st)
+    begin_every(st, env, TokPar::EveryCr, TokenType::EveryCr)?;
+    align_peek(st, env)
 }
 
-pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn init_align(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     let save_cs_ptr = st.scanner.cur_cs;
     push_alignment(st)?;
     st.scanner.align_state = -1_000_000;
@@ -850,6 +863,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     {
         error(
             st,
+            env,
             ("Improper ", Esc("halign"), " inside $$'s"),
             &[
                 r"Displays can use special alignments (like \eqalignno)",
@@ -870,7 +884,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.mode.inner()
     };
 
-    scan_spec(st, GroupCode::Align, None)?;
+    scan_spec(st, env, GroupCode::Align, None)?;
     ALIGN_HEAD.set_link(&mut st.mem, None);
     st.scanner.cur_align = Some(ALIGN_HEAD);
     st.scanner.cur_loop = None;
@@ -889,7 +903,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 
         let u_part = st.mem.tokens.begin()?;
         loop {
-            get_preamble_token(st)?;
+            get_preamble_token(st, env)?;
             if st.scanner.cur.cmd() == Cmd::MacParam {
                 break;
             }
@@ -902,6 +916,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     back_error(
                         st,
+                        env,
                         "Missing # inserted in alignment preamble",
                         &[
                             "There should be exactly one # between &'s, when an",
@@ -924,7 +939,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 
         let v_part = st.mem.tokens.begin()?;
         loop {
-            get_preamble_token(st)?;
+            get_preamble_token(st, env)?;
             if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur.cmd())
                 && st.scanner.align_state == -1_000_000
             {
@@ -933,6 +948,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur.cmd() == Cmd::MacParam {
                 error(
                     st,
+                    env,
                     "Only one # is allowed per tab",
                     &[
                         "There should be exactly one # between &'s, when an",
@@ -953,11 +969,11 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.save_stack
         .new_save_level(GroupCode::Align, st.mem.line)?;
-    begin_every(st, TokPar::EveryCr, TokenType::EveryCr)?;
-    align_peek(st)
+    begin_every(st, env, TokPar::EveryCr, TokenType::EveryCr)?;
+    align_peek(st, env)
 }
 
-pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn do_endv(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort> {
     fn is_v_template_end(r: &InputState) -> bool {
         r.state == TOKEN_LIST && r.token_loc().is_end() && r.token_type() == TokenType::VTemplate
     }
@@ -976,12 +992,12 @@ pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
         ));
     }
     if st.save_stack.cur_group == GroupCode::Align {
-        end_graf(st)?;
-        if fin_col(st)? {
-            fin_row(st)?;
+        end_graf(st, env)?;
+        if fin_col(st, env)? {
+            fin_row(st, env)?;
         }
         Ok(())
     } else {
-        off_save(st)
+        off_save(st, env)
     }
 }
