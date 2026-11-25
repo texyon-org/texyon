@@ -101,17 +101,21 @@ struct NameCollection {
 
 trait FontManagerBackend {
     fn get_platform_font_desc<'a>(&'a self, font: &'a PlatformFontRef) -> Cow<'a, CStr>;
-    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo, io: &mut CoreBridgeState<'_>);
+    fn get_op_size_rec_and_style_flags(
+        &self,
+        font: &mut FontInfo,
+        io: &mut CoreBridgeState<'_, '_>,
+    );
     fn search_for_host_platform_fonts(
         &mut self,
         maps: &mut FontMaps,
         name: &CStr,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     );
     fn read_names(&self, font: PlatformFontRef) -> NameCollection;
 }
 
-fn base_get_op_size_rec_and_style_flags(font: &mut FontInfo, io: &mut CoreBridgeState<'_>) {
+fn base_get_op_size_rec_and_style_flags(font: &mut FontInfo, io: &mut CoreBridgeState<'_, '_>) {
     let xfont = match Font::new(font.font_ref.clone(), 10.0, io) {
         Ok(xfont) => xfont,
         Err(_) => return,
@@ -249,7 +253,7 @@ impl FontMaps {
         backend: &dyn FontManagerBackend,
         pfont: PlatformFontRef,
         names: &NameCollection,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) {
         if self.platform_ref_to_font.contains_key(&pfont) {
             // this font has already been cached
@@ -509,7 +513,7 @@ impl FontManager {
         name: &[u8],
         variant: Option<&mut Vec<u8>>,
         mut pt_size: f64,
-        io: &mut CoreBridgeState<'_>,
+        io: &mut CoreBridgeState<'_, '_>,
     ) -> Option<PlatformFontRef> {
         let name = CString::new(name).unwrap_or_default();
         let name = name.as_c_str();
@@ -830,7 +834,7 @@ impl FontManager {
             })
     }
 
-    fn search_for_host_platform_fonts(&mut self, name: &CStr, io: &mut CoreBridgeState<'_>) {
+    fn search_for_host_platform_fonts(&mut self, name: &CStr, io: &mut CoreBridgeState<'_, '_>) {
         self.backend
             .search_for_host_platform_fonts(&mut self.maps, name, io)
     }

@@ -63,7 +63,7 @@ impl AuxData {
 }
 
 fn aux_bib_data_command(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     bibs: &mut BibData,
     aux: &AuxData,
@@ -138,7 +138,7 @@ fn aux_bib_data_command(
 }
 
 fn aux_bib_style_command(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     aux: &AuxData,
     pool: &mut StringPool,
@@ -216,7 +216,7 @@ fn aux_bib_style_command(
 }
 
 fn aux_citation_command(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     aux: &AuxData,
     pool: &mut StringPool,
@@ -318,7 +318,7 @@ fn aux_citation_command(
 }
 
 fn aux_input_command(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     aux: &mut AuxData,
     pool: &mut StringPool,
@@ -405,7 +405,7 @@ fn aux_input_command(
 }
 
 pub(crate) fn get_aux_command_and_process(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     globals.buffers.set_offset(BufTy::Base, 2, 0);
@@ -457,14 +457,17 @@ pub(crate) fn get_aux_command_and_process(
     Ok(())
 }
 
-pub(crate) fn pop_the_aux_stack(ctx: &mut Bibtex<'_, '_>, aux: &mut AuxData) -> Option<StrNumber> {
+pub(crate) fn pop_the_aux_stack(
+    ctx: &mut Bibtex<'_, '_, '_>,
+    aux: &mut AuxData,
+) -> Option<StrNumber> {
     let (file, last) = aux.pop_file();
     file.file.close(ctx).unwrap();
     if last { Some(file.name) } else { None }
 }
 
 pub(crate) fn last_check_for_aux_errors(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     pool: &StringPool,
     cites: &mut CiteInfo,
     bibs: &BibData,

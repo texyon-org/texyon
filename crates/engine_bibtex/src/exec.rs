@@ -70,8 +70,8 @@ impl ExecVal {
     }
 }
 
-pub(crate) struct ExecCtx<'a, 'bib, 'cbs> {
-    glbl_ctx: &'a mut Bibtex<'bib, 'cbs>,
+pub(crate) struct ExecCtx<'a, 'bib, 'cbs, 'h> {
+    glbl_ctx: &'a mut Bibtex<'bib, 'cbs, 'h>,
     pub default: HashPointer<hash::BstFn>,
     pub(crate) lit_stack: Vec<ExecVal>,
     pub mess_with_entries: bool,
@@ -79,8 +79,8 @@ pub(crate) struct ExecCtx<'a, 'bib, 'cbs> {
     pub checkpoint: Checkpoint,
 }
 
-impl<'a, 'bib, 'cbs> ExecCtx<'a, 'bib, 'cbs> {
-    pub(crate) fn new(glbl_ctx: &'a mut Bibtex<'bib, 'cbs>) -> ExecCtx<'a, 'bib, 'cbs> {
+impl<'a, 'bib, 'cbs, 'h> ExecCtx<'a, 'bib, 'cbs, 'h> {
+    pub(crate) fn new(glbl_ctx: &'a mut Bibtex<'bib, 'cbs, 'h>) -> ExecCtx<'a, 'bib, 'cbs, 'h> {
         ExecCtx {
             glbl_ctx,
             default: HashPointer::default(),
@@ -117,22 +117,22 @@ impl<'a, 'bib, 'cbs> ExecCtx<'a, 'bib, 'cbs> {
     }
 }
 
-impl<'bib, 'cbs> Deref for ExecCtx<'_, 'bib, 'cbs> {
-    type Target = Bibtex<'bib, 'cbs>;
+impl<'bib, 'cbs, 'h> Deref for ExecCtx<'_, 'bib, 'cbs, 'h> {
+    type Target = Bibtex<'bib, 'cbs, 'h>;
 
     fn deref(&self) -> &Self::Target {
         self.glbl_ctx
     }
 }
 
-impl DerefMut for ExecCtx<'_, '_, '_> {
+impl DerefMut for ExecCtx<'_, '_, '_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.glbl_ctx
     }
 }
 
 pub(crate) fn print_lit(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     pool: &StringPool,
     hash: &HashData,
     val: ExecVal,
@@ -162,7 +162,7 @@ pub(crate) fn print_lit(
 }
 
 pub(crate) fn print_stk_lit(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     pool: &StringPool,
     hash: &HashData,
     val: ExecVal,
@@ -193,7 +193,7 @@ pub(crate) fn print_stk_lit(
 }
 
 pub(crate) fn print_wrong_stk_lit(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -221,7 +221,7 @@ pub(crate) fn print_wrong_stk_lit(
 }
 
 pub(crate) fn bst_ex_warn_print(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     cites: &CiteInfo,
 ) -> Result<(), BibtexError> {
@@ -237,7 +237,7 @@ pub(crate) fn bst_ex_warn_print(
 }
 
 pub(crate) fn bst_ln_num_print(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     pool: &StringPool,
 ) -> Result<(), BibtexError> {
     ctx.write_logs(&format!(
@@ -248,7 +248,7 @@ pub(crate) fn bst_ln_num_print(
 }
 
 pub(crate) fn print_bst_name(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     pool: &StringPool,
     name: StrNumber,
 ) -> Result<(), BibtexError> {
@@ -257,13 +257,13 @@ pub(crate) fn print_bst_name(
     Ok(())
 }
 
-pub fn illegal_literal_confusion(ctx: &mut Bibtex<'_, '_>) {
+pub fn illegal_literal_confusion(ctx: &mut Bibtex<'_, '_, '_>) {
     ctx.write_logs("Illegal literal type");
     print_confusion(ctx);
 }
 
 fn pop_top_and_print(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -279,7 +279,7 @@ fn pop_top_and_print(
 }
 
 fn pop_whole_stack(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -305,7 +305,7 @@ pub fn skip_brace_level_greater_than_one(str: &[ASCIICode], brace_level: &mut i3
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn figure_out_the_formatted_name(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &StringPool,
     cites: &CiteInfo,
@@ -646,7 +646,7 @@ pub(crate) fn add_buf_pool(pool: &StringPool, buffers: &mut GlobalBuffer, str: S
 }
 
 pub(crate) fn add_out_pool(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &StringPool,
     str: StrNumber,
@@ -714,7 +714,7 @@ pub(crate) fn add_out_pool(
 }
 
 pub(crate) fn check_command_execution(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -735,7 +735,7 @@ pub(crate) fn check_command_execution(
 }
 
 fn add_pool_buf_and_push(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &mut StringPool,
 ) -> Result<(), BibtexError> {
@@ -747,7 +747,7 @@ fn add_pool_buf_and_push(
 }
 
 fn interp_eq(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -788,7 +788,7 @@ fn interp_eq(
 }
 
 fn interp_gt(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -813,7 +813,7 @@ fn interp_gt(
 }
 
 fn interp_lt(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -838,7 +838,7 @@ fn interp_lt(
 }
 
 fn interp_plus(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -863,7 +863,7 @@ fn interp_plus(
 }
 
 fn interp_minus(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -888,7 +888,7 @@ fn interp_minus(
 }
 
 fn interp_concat(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -981,7 +981,7 @@ fn interp_concat(
 }
 
 fn interp_gets(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &mut HashData,
     entries: &mut EntryData,
@@ -1061,7 +1061,7 @@ fn interp_gets(
 }
 
 fn interp_add_period(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1116,7 +1116,7 @@ fn interp_add_period(
 }
 
 fn interp_change_case(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     cites: &CiteInfo,
     hash: &HashData,
@@ -1290,7 +1290,7 @@ fn interp_change_case(
 }
 
 fn interp_chr_to_int(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1318,7 +1318,7 @@ fn interp_chr_to_int(
 }
 
 fn interp_cite(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     cites: &CiteInfo,
 ) -> Result<(), BibtexError> {
@@ -1331,7 +1331,7 @@ fn interp_cite(
 }
 
 fn interp_dup(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     cites: &CiteInfo,
 ) -> Result<(), BibtexError> {
@@ -1362,7 +1362,7 @@ fn interp_dup(
 }
 
 fn interp_empty(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1391,7 +1391,7 @@ fn interp_empty(
 }
 
 fn interp_format_name(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     buffers: &mut GlobalBuffer,
     cites: &CiteInfo,
@@ -1670,7 +1670,7 @@ fn interp_format_name(
 }
 
 fn interp_int_to_chr(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1697,7 +1697,7 @@ fn interp_int_to_chr(
 }
 
 fn interp_int_to_str(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1719,7 +1719,7 @@ fn interp_int_to_str(
 }
 
 fn interp_missing(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1750,7 +1750,7 @@ fn interp_missing(
 }
 
 fn interp_num_names(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     buffers: &mut GlobalBuffer,
     hash: &HashData,
@@ -1779,7 +1779,7 @@ fn interp_num_names(
 }
 
 fn interp_preamble(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     bibs: &mut BibData,
 ) -> Result<(), BibtexError> {
@@ -1793,7 +1793,7 @@ fn interp_preamble(
 }
 
 fn interp_purify(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1888,7 +1888,10 @@ fn interp_purify(
     Ok(())
 }
 
-fn interp_quote(ctx: &mut ExecCtx<'_, '_, '_>, pool: &mut StringPool) -> Result<(), BibtexError> {
+fn interp_quote(
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
+    pool: &mut StringPool,
+) -> Result<(), BibtexError> {
     let s = pool.add_string(b"\"");
     ctx.push_stack(ExecVal::String(s));
     Ok(())
@@ -1921,7 +1924,7 @@ impl<T> Index<SLRange> for [T] {
 }
 
 fn interp_substr(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -1986,7 +1989,7 @@ fn interp_substr(
 }
 
 fn interp_swap(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     cites: &CiteInfo,
 ) -> Result<(), BibtexError> {
@@ -2021,7 +2024,7 @@ fn interp_swap(
 }
 
 fn interp_text_len(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -2071,7 +2074,7 @@ fn interp_text_len(
 }
 
 fn interp_text_prefix(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -2144,7 +2147,7 @@ fn interp_text_prefix(
 }
 
 fn interp_ty(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -2165,7 +2168,7 @@ fn interp_ty(
 }
 
 fn interp_warning(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -2183,7 +2186,7 @@ fn interp_warning(
 }
 
 fn interp_width(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     cites: &CiteInfo,
@@ -2271,7 +2274,7 @@ fn interp_width(
 }
 
 fn interp_write(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     pool: &mut StringPool,
     hash: &HashData,
     buffers: &mut GlobalBuffer,
@@ -2290,7 +2293,7 @@ fn interp_write(
 }
 
 pub(crate) fn execute_fn(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     ex_fn_loc: HashPointer<BstFn>,
 ) -> Result<(), BibtexError> {

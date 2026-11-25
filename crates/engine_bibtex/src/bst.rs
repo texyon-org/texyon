@@ -78,7 +78,7 @@ pub(crate) enum BstCommand {
 }
 
 fn bst_entry_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if ctx.entry_seen {
@@ -197,7 +197,7 @@ fn bst_entry_command(
 }
 
 fn bst_execute_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if !ctx.read_seen {
@@ -236,7 +236,7 @@ fn bst_execute_command(
 }
 
 fn bst_function_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     eat_bst_white!(ctx, globals, "function");
@@ -278,7 +278,7 @@ fn bst_function_command(
 }
 
 fn bst_integers_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     eat_bst_white!(ctx, globals, "integers");
@@ -314,7 +314,7 @@ fn bst_integers_command(
 }
 
 fn bst_iterate_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if !ctx.read_seen {
@@ -359,7 +359,7 @@ fn bst_iterate_command(
 }
 
 fn bst_macro_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if ctx.read_seen {
@@ -443,7 +443,7 @@ fn bst_macro_command(
 }
 
 fn bst_read_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if ctx.read_seen {
@@ -727,7 +727,7 @@ fn bst_read_command(
 }
 
 fn bst_reverse_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if !ctx.read_seen {
@@ -771,7 +771,7 @@ fn bst_reverse_command(
 }
 
 fn bst_sort_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     if !ctx.read_seen {
@@ -790,7 +790,7 @@ fn bst_sort_command(
 }
 
 fn bst_strings_command(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     eat_bst_white!(ctx, globals, "strings");
@@ -837,7 +837,7 @@ fn bst_strings_command(
 }
 
 fn bad_argument_token(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     buffers: &mut GlobalBuffer,
     pool: &StringPool,
     hash: &HashData,
@@ -870,7 +870,7 @@ fn bad_argument_token(
 }
 
 pub(crate) fn get_bst_command_and_process(
-    ctx: &mut ExecCtx<'_, '_, '_>,
+    ctx: &mut ExecCtx<'_, '_, '_, '_>,
     globals: &mut GlobalItems<'_>,
 ) -> Result<(), BibtexError> {
     let init = globals.buffers.init(BufTy::Base);

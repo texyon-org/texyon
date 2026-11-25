@@ -203,8 +203,8 @@ pub(crate) struct Logs {
     file: Option<OutputId>,
 }
 
-pub(crate) struct Bibtex<'a, 'cbs> {
-    pub engine: &'a mut CoreBridgeState<'cbs>,
+pub(crate) struct Bibtex<'a, 'cbs, 'h> {
+    pub engine: &'a mut CoreBridgeState<'cbs, 'h>,
     pub config: BibtexConfig,
     pub history: History,
     pub logs: Logs,
@@ -232,11 +232,11 @@ pub(crate) struct Bibtex<'a, 'cbs> {
     pub s_aux_extension: StrNumber,
 }
 
-impl<'a, 'cbs> Bibtex<'a, 'cbs> {
+impl<'a, 'cbs, 'h> Bibtex<'a, 'cbs, 'h> {
     pub(crate) fn new(
-        engine: &'a mut CoreBridgeState<'cbs>,
+        engine: &'a mut CoreBridgeState<'cbs, 'h>,
         config: BibtexConfig,
-    ) -> Bibtex<'a, 'cbs> {
+    ) -> Bibtex<'a, 'cbs, 'h> {
         Bibtex {
             engine,
             config,
@@ -354,7 +354,7 @@ type ASCIICode = u8;
 type BufPointer = usize;
 type FieldLoc = usize;
 
-pub(crate) fn bibtex_main(ctx: &mut Bibtex<'_, '_>, aux_file_name: &CStr) -> History {
+pub(crate) fn bibtex_main(ctx: &mut Bibtex<'_, '_, '_>, aux_file_name: &CStr) -> History {
     let mut buffers = GlobalBuffer::new();
     let mut pool = StringPool::new();
     let mut hash = HashData::new();
@@ -420,7 +420,7 @@ pub(crate) fn bibtex_main(ctx: &mut Bibtex<'_, '_>, aux_file_name: &CStr) -> His
 }
 
 pub(crate) fn pre_def_certain_strings(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     GlobalItems {
         pool,
         hash,
@@ -532,7 +532,7 @@ pub(crate) fn pre_def_certain_strings(
 }
 
 pub(crate) fn inner_bibtex_main(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     globals: &mut GlobalItems<'_>,
     aux_file_name: &CStr,
 ) -> Result<History, BibtexError> {
@@ -604,7 +604,7 @@ pub(crate) fn inner_bibtex_main(
 }
 
 pub(crate) fn get_the_top_level_aux_file_name(
-    ctx: &mut Bibtex<'_, '_>,
+    ctx: &mut Bibtex<'_, '_, '_>,
     GlobalItems {
         pool, hash, aux, ..
     }: &mut GlobalItems<'_>,

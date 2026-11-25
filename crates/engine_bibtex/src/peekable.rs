@@ -17,7 +17,7 @@ pub(crate) struct PeekableInput {
 
 impl PeekableInput {
     pub(crate) fn open(
-        ctx: &mut Bibtex<'_, '_>,
+        ctx: &mut Bibtex<'_, '_, '_>,
         path: &CStr,
         format: FileFormat,
     ) -> Result<PeekableInput, BibtexError> {
@@ -34,7 +34,7 @@ impl PeekableInput {
         }
     }
 
-    pub(crate) fn close(self, ctx: &mut Bibtex<'_, '_>) -> Result<(), BibtexError> {
+    pub(crate) fn close(self, ctx: &mut Bibtex<'_, '_, '_>) -> Result<(), BibtexError> {
         if !ctx.engine.input_close(self.id) {
             Ok(())
         } else {
@@ -42,7 +42,7 @@ impl PeekableInput {
         }
     }
 
-    fn getc(&mut self, engine: &mut CoreBridgeState<'_>) -> libc::c_int {
+    fn getc(&mut self, engine: &mut CoreBridgeState<'_, '_>) -> libc::c_int {
         if self.peek_char != EOF {
             let rv = self.peek_char;
             self.peek_char = EOF;
@@ -74,7 +74,7 @@ impl PeekableInput {
         self.peek_char = c;
     }
 
-    pub fn eof(&mut self, engine: &mut CoreBridgeState<'_>) -> bool {
+    pub fn eof(&mut self, engine: &mut CoreBridgeState<'_, '_>) -> bool {
         if self.saw_eof {
             return true;
         }
@@ -86,7 +86,7 @@ impl PeekableInput {
         false
     }
 
-    fn eoln(&mut self, engine: &mut CoreBridgeState<'_>) -> bool {
+    fn eoln(&mut self, engine: &mut CoreBridgeState<'_, '_>) -> bool {
         if self.saw_eof {
             return true;
         }
@@ -99,7 +99,7 @@ impl PeekableInput {
 }
 
 pub(crate) fn input_ln(
-    engine: &mut CoreBridgeState<'_>,
+    engine: &mut CoreBridgeState<'_, '_>,
     peekable: &mut PeekableInput,
     buffers: &mut GlobalBuffer,
 ) -> bool {

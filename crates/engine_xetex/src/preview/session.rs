@@ -1006,7 +1006,7 @@ fn history_to_outcome(history: i32) -> Result<TexOutcome> {
 }
 
 fn catch_operation(
-    api: &mut CoreBridgeState<'_>,
+    api: &mut CoreBridgeState<'_, '_>,
     state: &mut EngineState,
     operation: impl FnOnce(&mut EngineState) -> OperationResult,
 ) -> OperationResult {
@@ -1015,7 +1015,7 @@ fn catch_operation(
 }
 
 fn run_locked<R>(
-    api: &mut CoreBridgeState<'_>,
+    api: &mut CoreBridgeState<'_, '_>,
     state: &mut EngineState,
     operation: impl FnOnce(&mut EngineState) -> R,
 ) -> R {

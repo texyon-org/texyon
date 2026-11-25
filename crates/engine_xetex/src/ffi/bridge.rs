@@ -20,15 +20,15 @@ use crate::preview::replay::adapter::{
 
 /// The bridge state of the current run. Every run holds the engine lock, so
 /// one slot serves all threads.
-static BRIDGE: AtomicPtr<CoreBridgeState<'static>> = AtomicPtr::new(ptr::null_mut());
+static BRIDGE: AtomicPtr<CoreBridgeState<'static, 'static>> = AtomicPtr::new(ptr::null_mut());
 
 pub(crate) struct BridgeScope<'a> {
-    previous: *mut CoreBridgeState<'static>,
+    previous: *mut CoreBridgeState<'static, 'static>,
     _borrow: PhantomData<&'a mut ()>,
 }
 
-pub(crate) fn enter<'a>(api: &'a mut CoreBridgeState<'_>) -> BridgeScope<'a> {
-    let api = (api as *mut CoreBridgeState<'_>).cast::<CoreBridgeState<'static>>();
+pub(crate) fn enter<'a>(api: &'a mut CoreBridgeState<'_, '_>) -> BridgeScope<'a> {
+    let api = (api as *mut CoreBridgeState<'_, '_>).cast::<CoreBridgeState<'static, 'static>>();
     BridgeScope {
         previous: BRIDGE.swap(api, Ordering::Relaxed),
         _borrow: PhantomData,
@@ -42,7 +42,7 @@ impl Drop for BridgeScope<'_> {
 }
 
 #[inline]
-pub(crate) fn with_bridge<R>(f: impl FnOnce(&mut CoreBridgeState<'_>) -> R) -> R {
+pub(crate) fn with_bridge<R>(f: impl FnOnce(&mut CoreBridgeState<'_, '_>) -> R) -> R {
     // SAFETY: a live `BridgeScope` holds the exclusive borrow behind the pointer,
     // the engine is single-threaded and `f` never re-enters, so this borrow is unique.
     let es = unsafe { BRIDGE.load(Ordering::Relaxed).as_mut() };
